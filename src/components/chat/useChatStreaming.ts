@@ -12,11 +12,7 @@ import {
   isWebSearchAllowed,
 } from "../../stores/policyRules";
 import { usePolicyStore } from "../../stores/policyStore";
-import {
-  appendAttachmentSuffix,
-  appendDictionarySuffix,
-  getAgentSystemPrompt,
-} from "../../config/prompts";
+import { appendDictionarySuffix, getAgentSystemPrompt } from "../../config/prompts";
 import { getDictionaryHintWords } from "../../utils/snippets";
 import { createToolRegistry } from "../../services/tools";
 import type { ToolRegistry } from "../../services/tools/ToolRegistry";
@@ -33,7 +29,10 @@ import {
   buildAgentRequestText,
   type AgentSelectionContext,
 } from "../../utils/agentSelectionContext";
-import { buildAttachmentRequestText } from "../../utils/chatAttachmentContext";
+import {
+  buildAttachmentRequestText,
+  buildAttachmentSuffix,
+} from "../../utils/chatAttachmentContext";
 
 const RAG_NOTE_LIMIT = 5;
 const RAG_NOTE_SNIPPET_LENGTH = 500;
@@ -409,10 +408,10 @@ export function useChatStreaming({
         // picture is not a screenshot, so it gets its own wording. Restore the
         // screen-context suffix for cloud once openwhispr-api#157 vision-routes
         // that field.
-        systemPrompt = appendAttachmentSuffix(systemPrompt, "image", settings.uiLanguage);
+        systemPrompt += buildAttachmentSuffix("image");
       }
       if (documents.length) {
-        systemPrompt = appendAttachmentSuffix(systemPrompt, "document", settings.uiLanguage);
+        systemPrompt += buildAttachmentSuffix("document");
       }
       if (byokImages.length || documents.length) {
         transformLastUserMessage(history, (message) => {

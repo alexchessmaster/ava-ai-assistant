@@ -56,10 +56,8 @@ export default function ChatView() {
     },
     onImagesUnsupported: (model) => {
       toast({
-        title: t("chat.attach.imagesUnsupportedTitle"),
-        description: t("chat.attach.imagesUnsupported", {
-          model: model || t("chat.attach.thisModel"),
-        }),
+        title: "Image not sent",
+        description: `${model || "The selected model"} can't read images. Pick a vision-capable model in Settings, AI Models.`,
       });
     },
   });

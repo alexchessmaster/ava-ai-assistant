@@ -149,22 +149,6 @@ class WindowManager {
       }
     );
 
-    // A file dropped anywhere outside a drop zone navigates the window to it,
-    // which would replace the dictation UI with the dropped file. The chat
-    // composer's own drop target stops propagation; this is the backstop for
-    // every other pixel of the panel.
-    this.mainWindow.webContents.on("will-navigate", (event, url) => {
-      const appUrl =
-        DevServerManager.getAppUrl(false) ??
-        pathToFileURL(DevServerManager.getAppFilePath(false).path).href;
-
-      if (isAllowedAppNavigation(url, appUrl)) {
-        return;
-      }
-
-      event.preventDefault();
-    });
-
     this.mainWindow.webContents.on("did-finish-load", () => {
       // A reload has not resolved its route yet. AppRouter releases this gate
       // after it renders the normal app; fresh onboarding keeps it active.

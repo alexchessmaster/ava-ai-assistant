@@ -3481,26 +3481,7 @@
     "searchChats": "搜尋聊天",
     "searchTitle": "搜尋對話",
     "searchDescription": "搜尋所有對話",
-    "newChatEmpty": "詢問關於筆記、轉錄或其他任何內容",
-    "attach": {
-      "add": "附加檔案",
-      "remove": "移除 {{name}}",
-      "dropHint": "拖放檔案以附加",
-      "truncated": "已截斷",
-      "imagesUnsupportedTitle": "圖片未傳送",
-      "imagesUnsupported": "{{model}} 無法讀取圖片。請在「設定 → AI 模型」中為語音助理選擇支援圖像的模型。",
-      "thisModel": "所選模型",
-      "errorTitle": "無法附加檔案",
-      "error": {
-        "unsupported": "{{name}} 不是支援的檔案類型",
-        "tooLarge": "{{name}} 太大，無法附加",
-        "unreadable": "無法讀取 {{name}}",
-        "pdfNoText": "{{name}} 沒有可讀文字——可能是掃描檔",
-        "tooMany": "最多可附加 {{max}} 個檔案",
-        "generic": "無法附加 {{name}}"
-      },
-      "unknownName": "該檔案"
-    }
+    "newChatEmpty": "詢問關於筆記、轉錄或其他任何內容"
   },
   "support": {
     "documentation": "文件",

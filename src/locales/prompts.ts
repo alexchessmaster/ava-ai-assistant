@@ -15,8 +15,6 @@ export interface PromptBundle {
   fullPrompt: string;
   dictionarySuffix: string;
   screenContextSuffix: string;
-  attachmentImageSuffix: string;
-  attachmentDocumentSuffix: string;
   translatePrompt: string;
 }
 

@@ -3481,26 +3481,7 @@
     "searchChats": "搜索聊天",
     "searchTitle": "搜索对话",
     "searchDescription": "搜索所有对话",
-    "newChatEmpty": "询问关于笔记、转录或其他任何内容",
-    "attach": {
-      "add": "添加文件",
-      "remove": "移除 {{name}}",
-      "dropHint": "拖放文件以添加",
-      "truncated": "已截断",
-      "imagesUnsupportedTitle": "图片未发送",
-      "imagesUnsupported": "{{model}} 无法读取图片。请在“设置 → AI 模型”中为语音助手选择支持图像的模型。",
-      "thisModel": "所选模型",
-      "errorTitle": "无法添加文件",
-      "error": {
-        "unsupported": "{{name}} 不是支持的文件类型",
-        "tooLarge": "{{name}} 太大，无法添加",
-        "unreadable": "无法读取 {{name}}",
-        "pdfNoText": "{{name}} 没有可读文本——可能是扫描件",
-        "tooMany": "最多可添加 {{max}} 个文件",
-        "generic": "无法添加 {{name}}"
-      },
-      "unknownName": "该文件"
-    }
+    "newChatEmpty": "询问关于笔记、转录或其他任何内容"
   },
   "support": {
     "documentation": "文档",

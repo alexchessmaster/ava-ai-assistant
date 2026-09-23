@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import { FileText, X } from "../icons";
 import { formatBytes } from "../../utils/formatBytes";
 import { cn } from "../lib/utils";
@@ -12,13 +11,12 @@ interface AttachmentTrayProps {
 
 /** The files staged for the message being composed, above the input pill. */
 export function AttachmentTray({ attachments, onRemove, className }: AttachmentTrayProps) {
-  const { t } = useTranslation();
   if (attachments.length === 0) return null;
 
   return (
     <ul className={cn("flex flex-wrap items-center gap-2", className)}>
       {attachments.map((attachment) => {
-        const label = t("chat.attach.remove", { name: attachment.name });
+        const label = `Remove ${attachment.name}`;
 
         return (
           <li key={attachment.id} className="relative">
@@ -45,7 +43,7 @@ export function AttachmentTray({ attachments, onRemove, className }: AttachmentT
                   </span>
                   <span className="block truncate text-[10px] text-muted-foreground">
                     {attachment.truncated
-                      ? `${formatBytes(attachment.bytes)} · ${t("chat.attach.truncated")}`
+                      ? `${formatBytes(attachment.bytes)} · truncated`
                       : formatBytes(attachment.bytes)}
                   </span>
                 </span>

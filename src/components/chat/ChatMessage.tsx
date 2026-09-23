@@ -1,11 +1,45 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, Check, Search, FileText, ChevronDown, ChevronRight, CircleAlert } from "../icons";
+import {
+  AudioLines,
+  Copy,
+  Check,
+  Search,
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  Square,
+} from "../icons";
 import { cn } from "../lib/utils";
 import { MarkdownRenderer } from "../ui/MarkdownRenderer";
+import { useSpeechControl } from "../../hooks/useSpeechControl";
 import type { ToolCallInfo } from "./types";
 import { extractNoteCards } from "./noteCards";
 import { toolIcons } from "./toolIcons";
+
+/** Reads a message aloud. Icon-only, matching the Copy button beside it. */
+function SpeakButton({ text }: { text: string }) {
+  const { speaking, available, label, toggle } = useSpeechControl(text);
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={!available}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "p-1 rounded-sm",
+        "text-muted-foreground/70 hover:text-foreground hover:bg-foreground/8",
+        "opacity-0 group-hover/msg:opacity-100 transition-all duration-150",
+        "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/30",
+        "disabled:pointer-events-none disabled:opacity-30"
+      )}
+    >
+      {speaking ? <Square size={12} className="text-emerald-500" /> : <AudioLines size={12} />}
+    </button>
+  );
+}
 
 interface ChatMessageProps {
   role: "user" | "assistant";
@@ -185,7 +219,7 @@ export function ChatMessage({
   if (role === "user") {
     return (
       <div
-        className="flex justify-end"
+        className="group/msg flex flex-col items-end"
         style={{ animation: "agent-message-in 200ms ease-out both" }}
       >
         <div
@@ -198,6 +232,12 @@ export function ChatMessage({
         >
           <span dir="auto">{content}</span>
         </div>
+        {/* Their own message too, not only the assistant's reply. */}
+        {content.length > 0 && !isStreaming && (
+          <div className="flex justify-end mt-1.5 -mb-0.5">
+            <SpeakButton text={content} />
+          </div>
+        )}
       </div>
     );
   }
@@ -266,6 +306,7 @@ export function ChatMessage({
 
         {hasContent && !isStreaming && (
           <div className="flex justify-start mt-1.5 -mb-0.5">
+            <SpeakButton text={content} />
             <button
               onClick={handleCopy}
               className={cn(

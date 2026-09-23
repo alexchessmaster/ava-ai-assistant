@@ -45,23 +45,6 @@ export function appendScreenContextSuffix(prompt: string, uiLanguage?: string): 
   return prompt + suffix;
 }
 
-// Appended to the chat prompt only when the user attached files to the
-// message. Images get their own grounding instruction — the screen-context
-// suffix says "a screenshot of your screen", which would misdescribe a picture
-// the user picked.
-export function appendAttachmentSuffix(
-  prompt: string,
-  kind: "image" | "document",
-  uiLanguage?: string
-): string {
-  const key = kind === "image" ? "attachmentImageSuffix" : "attachmentDocumentSuffix";
-  const locale = normalizeUiLanguage(uiLanguage || "en");
-  const suffix = i18n.getFixedT(locale, "prompts")(key, {
-    defaultValue: enPrompts[key],
-  });
-  return prompt + suffix;
-}
-
 export function appendDictionarySuffix(
   prompt: string,
   customDictionary?: string[],

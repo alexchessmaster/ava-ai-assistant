@@ -255,8 +255,8 @@ export function ChatInput({
                   // typing after every attachment.
                   requestAnimationFrame(() => inputRef.current?.focus());
                 }}
-                aria-label={t("chat.attach.add")}
-                title={t("chat.attach.add")}
+                aria-label="Attach a file"
+                title="Attach a file"
                 className={cn(
                   "flex items-center justify-center w-7 h-7 rounded-full shrink-0",
                   "text-muted-foreground/70 hover:text-foreground hover:bg-foreground/8",
@@ -279,7 +279,7 @@ export function ChatInput({
               autoFocus={autoFocus}
               placeholder={
                 isDragging
-                  ? t("chat.attach.dropHint")
+                  ? "Drop files to attach"
                   : (placeholder ?? t("agentMode.input.typeMessage"))
               }
               className={cn(

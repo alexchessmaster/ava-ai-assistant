@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, Plus, X } from "../icons";
+import { AudioLines, Check, Copy, Plus, Square, X } from "../icons";
 import { BrandMarkIcon } from "./BrandMarkIcon";
 import { MarkdownRenderer } from "../ui/MarkdownRenderer";
 import { Button } from "../ui/button";
@@ -23,6 +23,7 @@ import {
   AGENT_TOOL_NAME_FALLBACK_KEY,
 } from "../../helpers/agentToolPresentation";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
+import { useSpeechControl } from "../../hooks/useSpeechControl";
 import type { AgentState, ChatImageAttachment } from "../chat/types";
 import {
   normalizeAgentSelectionContext,
@@ -124,10 +125,8 @@ export function AssistantPanel({
     onResponseContent,
     onImagesUnsupported: (model) => {
       toast({
-        title: t("chat.attach.imagesUnsupportedTitle"),
-        description: t("chat.attach.imagesUnsupported", {
-          model: model || t("chat.attach.thisModel"),
-        }),
+        title: "Image not sent",
+        description: `${model || "The selected model"} can't read images. Pick a vision-capable model in Settings, AI Models.`,
       });
     },
   });
@@ -313,6 +312,8 @@ export function AssistantPanel({
     voiceState,
     requestPending: thinking || pendingCommand != null,
   });
+  // Reads the reply currently on screen, from the same hook the chat uses.
+  const speech = useSpeechControl(displayedResponse);
   const responseSelectionRootRef = useRef<HTMLDivElement | null>(null);
   const [selectedContext, setSelectedContext] = useState<AgentSelectionContext | null>(null);
 
@@ -423,6 +424,11 @@ export function AssistantPanel({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (voiceState === "listening") return;
+        // Escape silences the reading first; a second press closes the panel.
+        if (speech.speaking) {
+          speech.stop();
+          return;
+        }
         if (isBusy) {
           streaming.cancelStream();
           // A hidden panel means the compact Beam circle owns the thinking
@@ -458,6 +464,7 @@ export function AssistantPanel({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [
     voiceState,
+    speech,
     isBusy,
     streaming,
     open,
@@ -666,6 +673,25 @@ export function AssistantPanel({
             >
               <X aria-hidden="true" />
               {t("common.close")}
+            </Button>
+            {/* Icon-only: the panel is narrow, and three labelled buttons
+                overflow it. Mirrors the chat's per-message speaker. */}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="px-3"
+              onClick={speech.toggle}
+              disabled={!speech.available}
+              aria-label={speech.label}
+              title={speech.label}
+              tabIndex={footerPhase === "actions" ? 0 : -1}
+            >
+              {speech.speaking ? (
+                <Square aria-hidden="true" className="fill-current text-emerald-500" />
+              ) : (
+                <AudioLines aria-hidden="true" />
+              )}
             </Button>
             <Button
               type="button"

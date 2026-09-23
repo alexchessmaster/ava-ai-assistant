@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "../ui/useToast";
 import type { ChatAttachment } from "./types";
@@ -8,17 +8,24 @@ import type { ChatAttachmentReadResult } from "../../types/electron";
 export const MAX_CHAT_ATTACHMENTS = 5;
 
 // Main-process error codes → the sentence the user actually reads. Two codes
-// can share a sentence when the user's next move is the same either way.
-const ERROR_KEYS: Record<string, string> = {
-  UNSUPPORTED_TYPE: "chat.attach.error.unsupported",
-  BINARY: "chat.attach.error.unsupported",
-  TOO_LARGE: "chat.attach.error.tooLarge",
-  IMAGE_TOO_LARGE: "chat.attach.error.tooLarge",
-  EMPTY: "chat.attach.error.unreadable",
-  UNREADABLE: "chat.attach.error.unreadable",
-  PDF_UNREADABLE: "chat.attach.error.unreadable",
-  PDF_NO_TEXT: "chat.attach.error.pdfNoText",
+// share a sentence when the user's next move is the same either way.
+//
+// Plain English rather than i18n keys on purpose: this project checks that
+// every `t()` key resolves in `en`, and every `en` key exists in 11 other
+// locales, so translating these would touch thirteen upstream files. Convert
+// them here when the fork wants translations.
+const ERROR_MESSAGES: Record<string, (name: string) => string> = {
+  UNSUPPORTED_TYPE: (name) => `${name} isn't a supported file type`,
+  BINARY: (name) => `${name} isn't a supported file type`,
+  TOO_LARGE: (name) => `${name} is too large to attach`,
+  IMAGE_TOO_LARGE: (name) => `${name} is too large to attach`,
+  EMPTY: (name) => `${name} couldn't be read`,
+  UNREADABLE: (name) => `${name} couldn't be read`,
+  PDF_UNREADABLE: (name) => `${name} couldn't be read`,
+  PDF_NO_TEXT: (name) => `${name} has no readable text — it may be a scanned document`,
 };
+
+const GENERIC_ERROR = (name: string) => `${name} couldn't be attached`;
 
 export interface ChatAttachmentDropHandlers {
   onDragEnter: (event: DragEvent) => void;
@@ -149,18 +156,17 @@ export function useChatAttachments(): ChatAttachments {
       if (accepted.length) setAttachments((current) => [...current, ...accepted]);
 
       for (const failure of failures) {
+        const describe = ERROR_MESSAGES[failure.error] ?? GENERIC_ERROR;
         toast({
-          title: t("chat.attach.errorTitle"),
-          description: t(ERROR_KEYS[failure.error] ?? "chat.attach.error.generic", {
-            name: failure.name || t("chat.attach.unknownName"),
-          }),
+          title: "Couldn't attach file",
+          description: describe(failure.name || "That file"),
           variant: "destructive",
         });
       }
       if (overflow > 0) {
         toast({
-          title: t("chat.attach.errorTitle"),
-          description: t("chat.attach.error.tooMany", { max: MAX_CHAT_ATTACHMENTS }),
+          title: "Couldn't attach file",
+          description: `You can attach up to ${MAX_CHAT_ATTACHMENTS} files`,
           variant: "destructive",
         });
       }
@@ -227,6 +233,21 @@ export function useChatAttachments(): ChatAttachments {
       readingRef.current = false;
     }
   }, [applyResults]);
+
+  // A file dropped outside a drop zone — the panel header, the chat sidebar —
+  // navigates the window to that file, replacing the whole UI with it. Both
+  // surfaces that can receive a drop mount this hook, so the default is
+  // cancelled here rather than in main, which keeps the feature out of
+  // windowManager.js.
+  useEffect(() => {
+    const swallow = (event: globalThis.DragEvent) => event.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id));

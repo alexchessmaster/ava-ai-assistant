@@ -3481,26 +3481,7 @@
     "searchChats": "チャットを検索",
     "searchTitle": "会話を検索",
     "searchDescription": "すべての会話を検索",
-    "newChatEmpty": "ノートや文字起こし、その他なんでも聞いてください",
-    "attach": {
-      "add": "ファイルを添付",
-      "remove": "{{name}} を削除",
-      "dropHint": "ファイルをドロップして添付",
-      "truncated": "切り詰め",
-      "imagesUnsupportedTitle": "画像は送信されませんでした",
-      "imagesUnsupported": "{{model}} は画像を読み取れません。設定 → AI モデルで、音声アシスタント用に画像対応モデルを選んでください。",
-      "thisModel": "選択中のモデル",
-      "errorTitle": "ファイルを添付できませんでした",
-      "error": {
-        "unsupported": "{{name}} は対応していないファイル形式です",
-        "tooLarge": "{{name}} は大きすぎて添付できません",
-        "unreadable": "{{name}} を読み取れませんでした",
-        "pdfNoText": "{{name}} に読み取れるテキストがありません（スキャン文書の可能性があります）",
-        "tooMany": "添付できるファイルは最大 {{max}} 件です",
-        "generic": "{{name}} を添付できませんでした"
-      },
-      "unknownName": "そのファイル"
-    }
+    "newChatEmpty": "ノートや文字起こし、その他なんでも聞いてください"
   },
   "support": {
     "documentation": "ドキュメント",

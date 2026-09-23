@@ -3004,26 +3004,7 @@
     "searchChats": "Chats suchen",
     "searchTitle": "Unterhaltungen suchen",
     "searchDescription": "In allen Unterhaltungen suchen",
-    "newChatEmpty": "Fragen Sie zu Ihren Notizen, Transkripten oder anderem",
-    "attach": {
-      "add": "Datei anhängen",
-      "remove": "{{name}} entfernen",
-      "dropHint": "Dateien zum Anhängen ablegen",
-      "truncated": "gekürzt",
-      "imagesUnsupportedTitle": "Bild nicht gesendet",
-      "imagesUnsupported": "{{model}} kann keine Bilder lesen. Wähle in Einstellungen → KI-Modelle ein bildfähiges Modell für den Sprachassistenten.",
-      "thisModel": "Das ausgewählte Modell",
-      "errorTitle": "Datei konnte nicht angehängt werden",
-      "error": {
-        "unsupported": "{{name}} ist kein unterstützter Dateityp",
-        "tooLarge": "{{name}} ist zu groß zum Anhängen",
-        "unreadable": "{{name}} konnte nicht gelesen werden",
-        "pdfNoText": "{{name}} enthält keinen lesbaren Text — möglicherweise ein Scan",
-        "tooMany": "Du kannst bis zu {{max}} Dateien anhängen",
-        "generic": "{{name}} konnte nicht angehängt werden"
-      },
-      "unknownName": "Diese Datei"
-    }
+    "newChatEmpty": "Fragen Sie zu Ihren Notizen, Transkripten oder anderem"
   },
   "referral": {
     "title": "Empfehlen und Belohnungen erhalten",
