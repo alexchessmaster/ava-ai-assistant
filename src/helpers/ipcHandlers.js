@@ -5343,6 +5343,30 @@ class IPCHandlers {
       }
     });
 
+    ipcMain.handle("cancel-local-reasoning", (event, requestId) => {
+      require("../services/localReasoningBridge").default.cancel(requestId);
+    });
+
+    // After a local refusal, the renderer plans a note's parts against this
+    // number (#2142 part 3). It is the same ceiling runInference sizes against,
+    // so a part the renderer judges to fit is one the main process will accept
+    // without a restart it cannot afford.
+    ipcMain.handle("get-local-context-budget", async (event, modelId) => {
+      try {
+        const modelManager = require("./modelManagerBridge").default;
+        modelManager.ensureInitialized();
+        const modelInfo = modelManager.findModelById(modelId);
+        if (!modelInfo) {
+          return { success: false, error: `Model "${modelId}" not found` };
+        }
+        const modelPath = require("path").join(modelManager.modelsDir, modelInfo.model.fileName);
+        const { ceiling } = await modelManager.contextCeiling(modelInfo, modelPath);
+        return { success: true, maxContextTokens: ceiling, modelName: modelInfo.model.name };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
     ipcMain.handle(
       "process-anthropic-reasoning",
       async (event, text, modelId, _agentName, config) => {
