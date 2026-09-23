@@ -8,7 +8,7 @@ test("the alias file is parsed leniently", async () => {
 
   const entries = parseCommandsFile(
     [
-      "# Ava — commands the assistant may run.",
+      "# Eva — commands the assistant may run.",
       "",
       "   ",
       "vscode = code",

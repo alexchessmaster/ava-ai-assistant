@@ -102,7 +102,7 @@ function approvedIn(dir) {
 }
 
 test.beforeEach(() => {
-  currentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ava-commands-"));
+  currentDir = fs.mkdtempSync(path.join(os.tmpdir(), "eva-commands-"));
   dialogCalls = [];
   dialogResponse = 2;
   dialogCheckbox = false;

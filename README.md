@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="src/assets/logo.svg" alt="Ava AI assistant" width="120" />
+  <img src="src/assets/logo.svg" alt="Eva AI assistant" width="120" />
 </p>
 
-<h1 align="center">Ava AI assistant</h1>
+<h1 align="center">Eva AI assistant</h1>
 
 <p align="center">
   <strong>A fork of <a href="https://github.com/OpenWhispr/openwhispr">OpenWhispr</a></strong> —
@@ -21,17 +21,17 @@
 
 > ### This is a fork
 >
-> Ava AI assistant is built on [OpenWhispr](https://github.com/OpenWhispr/openwhispr) and
+> Eva AI assistant is built on [OpenWhispr](https://github.com/OpenWhispr/openwhispr) and
 > tracks it closely. The overwhelming majority of this codebase — the dictation engine,
 > meeting transcription and diarization, notes, calendar sync, semantic search, the
 > cloud/self-hosted/local model plumbing, and every platform integration — is upstream's
 > work, unchanged.
 >
-> This README documents the whole app, but **[What Ava adds](#what-ava-adds)** below is the
+> This README documents the whole app, but **[What Eva adds](#what-eva-adds)** below is the
 > only part that is this fork's own. If you want the app without those additions, use
 > [upstream](https://github.com/OpenWhispr/openwhispr).
 
-## What Ava adds
+## What Eva adds
 
 Seven changes on top of upstream. Each is deliberately narrow and lives mostly in new
 files, so the fork rebases cleanly onto new OpenWhispr releases.
@@ -122,7 +122,7 @@ included. There is no setting to find and no toggle to leave on.
 
 | You write                      | It is                    | What happens                                          |
 | ------------------------------ | ------------------------ | ----------------------------------------------------- |
-| `code`                         | a program                | launched detached, so it outlives Ava. **No dialog.** |
+| `code`                         | a program                | launched detached, so it outlives Eva. **No dialog.** |
 | `https://github.com`           | a link                   | opened in your browser. **No dialog.**                |
 | `https://duckduckgo.com/?q=%s` | a search link            | `%s` takes what you said, URL-encoded                 |
 | `!df -h /`                     | a program, **read back** | runs, waits, the output goes to the assistant         |
@@ -300,7 +300,7 @@ Two bounds make this safe to use, and both are worth knowing about:
 
 #### Showing you things (not the assistant)
 
-A launched command gets no terminal — it is detached so it can outlive Ava — so a command
+A launched command gets no terminal — it is detached so it can outlive Eva — so a command
 whose only job is to print has to either read back with `!` or surface itself:
 
 ```ini
@@ -373,7 +373,7 @@ The refusal applies to aliases too, so a `!` alias cannot be used to slip past i
   at the same trust level as everything else it says. That is also why the tool takes no
   `reason` parameter.
 - **Output is opt-in, because waiting is usually wrong.** An app you open should outlive
-  Ava, so the default is to launch and walk away — output comes back only when you asked,
+  Eva, so the default is to launch and walk away — output comes back only when you asked,
   with a `!` alias or the checkbox. The model cannot ask for it; only you can.
 - **Read-back is a new channel.** It puts text from your machine into the model's context,
   which the silent path does not: a file name, a log line or a `curl` result could contain
@@ -402,7 +402,7 @@ while every other part of the app is fine.
 - A **self-hosted** model whose size cannot be read at all is allowed tools. You chose it and
   pointed the app at it; second-guessing that is not this code's job.
 
-**One caveat that will bite long conversations.** Ava does not set `num_ctx`, so Ollama uses
+**One caveat that will bite long conversations.** Eva does not set `num_ctx`, so Ollama uses
 the model's default — 4096 tokens for `gemma4:e4b` — and when a prompt is longer than that it
 truncates **silently**, dropping the _oldest_ part. That is the system prompt, and the tool
 instructions live there, so the symptom is a model that suddenly forgets it can run
@@ -426,9 +426,9 @@ spend about 2200 of those 4096 tokens.
 
 - **Naming.** This is the fork's product name. Internal identifiers — the package name,
   app id, install directory, and in-app product strings — still say OpenWhispr, because
-  renaming them changes where user data lives. Treat "Ava AI assistant" as the project
+  renaming them changes where user data lives. Treat "Eva AI assistant" as the project
   name for now, not yet a rebranded build.
-- **No binaries.** There are no Ava releases; build from source with the steps below.
+- **No binaries.** There are no Eva releases; build from source with the steps below.
   Prebuilt installers for the unmodified app are on
   [upstream's releases page](https://github.com/OpenWhispr/openwhispr/releases).
 - **PDF support adds a dependency** (`pdfjs-dist`), which is the single largest change to
@@ -444,8 +444,8 @@ Requires Node.js 24+ (the pinned version in `.nvmrc`; using another major will b
 `npm ci` in CI).
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/ava-ai-assistant.git
-cd ava-ai-assistant
+git clone https://github.com/YOUR-USERNAME/eva-ai-assistant.git
+cd eva-ai-assistant
 npm install
 npm run dev
 ```

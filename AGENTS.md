@@ -11,7 +11,7 @@ Read `CLAUDE.md` for the app. Read this for the diff.
 
 ## 1. What this repository is
 
-**Ava AI assistant** — a fork of [OpenWhispr](https://github.com/OpenWhispr/openwhispr).
+**Eva AI assistant** — a fork of [OpenWhispr](https://github.com/OpenWhispr/openwhispr).
 
 Nearly everything here is upstream's code, unchanged: dictation, meeting transcription and
 diarization, notes, calendar sync, semantic search, the model/provider plumbing. The fork's
@@ -109,7 +109,7 @@ which is also why `useChatStreaming.ts` is untouched.
 
 1. What executes is always text a human wrote (an alias value, an approved command) or the
    exact string the dialog displayed. Matching helpers (`normalizeForMatch`, `squash`) are
-   for *matching only* — collapsing whitespace inside quotes would change what the shell runs.
+   for _matching only_ — collapsing whitespace inside quotes would change what the shell runs.
 2. The approval dialog shows the command and nothing the model authored. Do not add a
    `reason` parameter to the tool, however helpful it looks.
 3. Aliases are standing permission and always have been: anything that reaches the model can
