@@ -846,6 +846,38 @@ export type ChatAttachmentReadResult =
   | { ok: true; attachment: ChatFileAttachment }
   | { ok: false; error: ChatAttachmentError | string; name?: string };
 
+/** One line of `commands.txt`, as the runtime's parser reads it. */
+export interface CommandAlias {
+  names: string[];
+  command: string;
+  /** A `!` in front of the command: the output is read back to the assistant. */
+  capture: boolean;
+}
+
+export interface CommandConfigSnapshot {
+  dir: string;
+  commandsFile: string;
+  approvedFile: string;
+  /** Null when the file is absent — which is the feature's off switch. */
+  commandsText: string | null;
+  aliases: CommandAlias[];
+  approved: Array<{ command: string; capture: boolean }>;
+}
+
+/**
+ * Deliberately a flat shape rather than a discriminated union: this crosses
+ * IPC, and `!result?.ok` does not narrow a union through optional chaining, so
+ * the error branch would still see the success variant.
+ */
+export interface CommandConfigWriteResult {
+  ok: boolean;
+  error?: string;
+  /** Present after a successful write of `commands.txt`. */
+  aliases?: CommandAlias[];
+  /** Present after a successful write of the approvals file. */
+  approved?: Array<{ command: string; capture: boolean }>;
+}
+
 export interface UpdateCheckResult {
   updateAvailable: boolean;
   version?: string;
@@ -1676,6 +1708,20 @@ declare global {
        * the commands and URLs behind them never leave the machine.
        */
       getCommandAliases?: () => Promise<string[]>;
+
+      /**
+       * The same two command files, for the Commands view. `commandsText` is
+       * null when the file is absent, which is not the same as an empty file:
+       * absent turns the whole feature off, empty is a file with no aliases.
+       */
+      getCommandConfig?: () => Promise<CommandConfigSnapshot>;
+      saveCommandsFile?: (text: string) => Promise<CommandConfigWriteResult>;
+      /** Removes the alias file, which is the feature's off switch. */
+      deleteCommandsFile?: () => Promise<CommandConfigWriteResult>;
+      saveApprovedCommands?: (
+        list: Array<{ command: string; capture: boolean }>
+      ) => Promise<CommandConfigWriteResult>;
+      revealCommandConfig?: (which: "commands" | "approved") => Promise<{ ok: boolean }>;
 
       // Read-aloud fallback for Linux, where Chromium's speech synthesis has no
       // voices. macOS and Windows use the Web Speech API and never call these.

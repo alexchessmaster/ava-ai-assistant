@@ -75,8 +75,21 @@ function spawnEnv() {
  * The names the assistant may ask for, for the tool description. Names only:
  * the values are the user's own commands and URLs, and the description travels
  * to whatever model they have configured, so those never leave the machine.
+ *
+ * `dir` defaults, and must: `ipcHandlers.js` calls this with no argument, and
+ * without the default `path.join(undefined, …)` threw a `TypeError` that the
+ * catch below read as "no aliases". The result was silent and total — the list
+ * never reached the model, so `run_command` arrived describing a tool with no
+ * known names. The user asks "how much space do I have left?", the model
+ * invents `df -h` instead of their `disk space` alias, and an invented command
+ * is not an alias: it opens the approval dialog, which captures no output by
+ * default, so the question gets an answer with nothing in it. (Measured: the
+ * invented-command half is reproducible with the names absent. The exact
+ * wording the model then replies with is not — see AGENTS.md §4.) Every other
+ * entry point into these files takes the same default; this one was the
+ * exception.
  */
-function listAliasNames(dir) {
+function listAliasNames(dir = defaultConfigDir()) {
   const aliases = readAliases(dir);
   if (!aliases) return [];
   return [...new Set(aliases.flatMap((entry) => entry.names))];
@@ -497,4 +510,9 @@ module.exports = {
   listAliasNames,
   requestRun,
   searchPath,
+  // Exported so the in-app editor (./commandConfig.js) reads and writes the
+  // same two files this one authorizes against. Two copies of the path would
+  // be two answers to "where is the commands file", and the wrong one is
+  // silent: the editor would save a file nothing ever reads.
+  defaultConfigDir,
 };

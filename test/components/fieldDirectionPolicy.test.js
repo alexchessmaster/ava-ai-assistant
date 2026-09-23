@@ -58,6 +58,11 @@ function inventoryByFile(inventory) {
 const EXPECTED_SHARED_FIELD_DIRECTIONS = {
   "src/components/ApiKeysSection.tsx": ["auto"],
   "src/components/AuthenticationStep.tsx": ["ltr", "auto", "ltr", "ltr", "ltr"],
+  // The commands file and the approved-command field. Both hold the user's own
+  // text — commands in Latin script, but the file is mostly comments they write
+  // themselves, in whatever language they write in — so `auto` reads the first
+  // strong character and is correct either way.
+  "src/components/CommandsView.tsx": ["auto", "auto"],
   "src/components/CreateTeamDialog.tsx": ["auto"],
   "src/components/CreateWorkspaceDialog.tsx": ["auto"],
   "src/components/DictionaryView.tsx": ["auto", "auto", "auto"],
@@ -88,6 +93,10 @@ const EXPECTED_SHARED_FIELD_DIRECTIONS = {
 const EXPECTED_NATIVE_FIELD_DIRECTIONS = {
   "src/components/ApiKeysSection.tsx": ["inherit"],
   "src/components/CommandSearch.tsx": ["auto"],
+  // The two "read output" checkboxes. `inherit` is the right policy for a
+  // checkbox: it carries no text of its own, and each one is wrapped in a
+  // <label>, which is what names it.
+  "src/components/CommandsView.tsx": ["inherit", "inherit"],
   "src/components/MemberPickList.tsx": ["auto"],
   "src/components/ReferralDashboard.tsx": ["ltr"],
   "src/components/SettingsPage.tsx": ["inherit"],

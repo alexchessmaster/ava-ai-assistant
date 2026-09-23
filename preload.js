@@ -310,6 +310,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   /** Just the names, so the model can pick the user's own word for something. */
   getCommandAliases: () => ipcRenderer.invoke("get-command-aliases"),
 
+  // The same two files, for the Commands view. The main process resolves the
+  // directory itself — no path crosses this bridge, so the renderer cannot
+  // aim these writers at a file of its choosing.
+  getCommandConfig: () => ipcRenderer.invoke("get-command-config"),
+  saveCommandsFile: (text) => ipcRenderer.invoke("save-commands-file", text),
+  deleteCommandsFile: () => ipcRenderer.invoke("delete-commands-file"),
+  saveApprovedCommands: (list) => ipcRenderer.invoke("save-approved-commands", list),
+  revealCommandConfig: (which) => ipcRenderer.invoke("reveal-command-config", which),
+
   // Read-aloud fallback for Linux, where Chromium has no speech voices.
   systemSpeechStatus: () => ipcRenderer.invoke("system-speech-status"),
   systemSpeechSpeak: (text) => ipcRenderer.invoke("system-speech-speak", text),

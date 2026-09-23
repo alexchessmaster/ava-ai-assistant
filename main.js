@@ -1001,6 +1001,9 @@ async function startApp() {
   // additions stay out of ipcHandlers.js. Not a sidecar: the TTS binary is
   // one-shot, so there is nothing to shut down here.
   require("./src/helpers/kokoroIpc").register({ windowManager });
+  // The in-app editor for the assistant's command files. Same seam: the
+  // handlers live in the fork's own module rather than ipcHandlers.js.
+  require("./src/helpers/commandConfig").register();
   startAuthBridgeServer();
 
   cliBridge = new CliBridge(ipcHandlers);

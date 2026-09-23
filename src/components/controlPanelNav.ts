@@ -1,11 +1,28 @@
 import type React from "react";
 import { useTranslation } from "react-i18next";
-import { Home, BarChart3, MessageSquare, NotebookPen, BookOpen, Upload, Blocks } from "./icons";
+import {
+  Home,
+  BarChart3,
+  MessageSquare,
+  NotebookPen,
+  BookOpen,
+  Terminal,
+  Upload,
+  Blocks,
+} from "./icons";
 import { isAgentAllowed, isPolicyActionAllowed } from "../stores/policyRules";
 import { usePolicyStore } from "../stores/policyStore";
 
 export type ControlPanelView =
-  "home" | "insights" | "chat" | "personal-notes" | "dictionary" | "upload" | "integrations";
+  | "home"
+  | "insights"
+  | "chat"
+  | "personal-notes"
+  | "dictionary"
+  // The fork's editor for the assistant's command files (AGENTS.md §2f).
+  | "commands"
+  | "upload"
+  | "integrations";
 
 export interface ControlPanelNavItem {
   id: ControlPanelView;
@@ -34,6 +51,10 @@ export function useControlPanelNavItems(): ControlPanelNavItem[] {
       ? [{ id: "upload" as const, label: t("sidebar.upload"), icon: Upload }]
       : []),
     { id: "dictionary", label: t("sidebar.dictionary"), icon: BookOpen },
+    // Plain English rather than a `t()` key, like the fork's other new strings:
+    // a key here would mean adding it to eleven upstream locale files and
+    // re-merging them on every rebase. See AGENTS.md §4.
+    { id: "commands", label: "Commands", icon: Terminal },
     { id: "integrations", label: t("sidebar.integrations"), icon: Blocks },
   ];
 }

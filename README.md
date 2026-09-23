@@ -7,7 +7,8 @@
 <p align="center">
   <strong>A fork of <a href="https://github.com/OpenWhispr/openwhispr">OpenWhispr</a></strong> —
   privacy-first voice-to-text dictation with AI agents, meeting transcription, and notes.<br/>
-  Same app, plus <strong>file attachments</strong>, <strong>read-aloud replies</strong>, and
+  Same app, plus <strong>file attachments</strong>, <strong>a local text-to-speech voice</strong>,
+  <strong>the assistant running things on your computer</strong>, and
   <strong>vision for self-hosted models</strong>.
 </p>
 
@@ -69,21 +70,64 @@ fixed here:
 If a model genuinely can't read images, you get a toast naming it instead of an image
 that silently never left.
 
-### 3. Read replies aloud
+### 3. Read replies aloud (TTS)
 
 A speaker button reads a message out loud: on the assistant's reply **and your own
 messages** in the chat, and on the reply in the Voice Assistant panel.
 
-Speech is generated locally by the built-in engine — Chromium's own speech synthesis,
-which routes to the OS voices. Nothing is downloaded, nothing is sent anywhere, and it
-works offline. On Linux that means speech-dispatcher/espeak-ng; macOS and Windows use
-their native voices, which sound noticeably better.
+There are three engines, tried in this order, and **the first one wins**:
+
+|     | Engine                      | Where it comes from                                     |
+| --- | --------------------------- | ------------------------------------------------------- |
+| 1   | **Kokoro-82M**              | downloaded once, ~305 MB, runs entirely on your machine |
+| 2   | Chromium's speech synthesis | your OS voices — macOS/Windows only                     |
+| 3   | `spd-say`                   | Linux, through speech-dispatcher                        |
+
+**Install nothing and nothing changes** — read-aloud works exactly as it did before,
+using your system voices. Installing Kokoro is opt-in and its own button.
+
+#### The local voice (Kokoro)
+
+Kokoro-82M is an 82-million-parameter TTS model: small enough to run faster than real
+time on a CPU, and it sounds markedly better than the default system voices. It is
+Apache-2.0, it runs offline, and nothing you read aloud leaves the machine.
+
+**Settings → Speech to Text → Local voice → Install.** One button; there is no terminal
+step and no separate program to install. It downloads the engine (~28 MB) and then the
+voice model, with progress, and offers two bundles:
+
+| Bundle                | Size    | Voices                           |
+| --------------------- | ------- | -------------------------------- |
+| Kokoro English        | ~305 MB | 11 English voices                |
+| Kokoro multi-language | ~348 MB | 103 voices across many languages |
+
+Pick a voice from the list and hit **Preview** to hear it before you commit to it. The
+choice is remembered, and every read-aloud button in the app uses it from then on —
+the assistant panel and both sides of the chat. Removing the model goes back to the
+system voices.
+
+A few things worth knowing:
+
+- **It is not a preference, it is a fallback order.** If a Kokoro model is installed it
+  is used, even on a machine with excellent native voices. If anything goes wrong mid-reply,
+  that reply quietly finishes on the system voices rather than going silent.
+- **Long replies are chunked** into a few sentences at a time and played back to back, so
+  the first words start before the end has been synthesized. `Esc` in the panel stops it.
+- **Linux gets the most from this.** Electron links no speech library, so read-aloud on
+  Linux depends on `speech-dispatcher` being installed and sounds like espeak-ng when it
+  is. Kokoro is the first genuinely good option there, and it is identical to macOS.
+- **Windows is not supported for the local voice yet.** The button says so instead of
+  installing an engine the OS cannot load, and read-aloud keeps working through the
+  native voices. (Upstream works around a Windows DLL collision by patching binaries at
+  build time; doing that from a runtime download could not be verified here, so it is
+  left alone rather than shipped untested.)
+
+#### Everything the reply says
 
 Replies are cleaned before they're spoken: a markdown reply read literally would say
 "asterisk asterisk important asterisk asterisk". Code blocks are never read (the engine
 announces a code block instead), links are read as their label, and bare URLs are dropped.
-Long replies are spoken in sentence-sized chunks so nothing gets truncated. Only one reply
-plays at a time; `Esc` in the panel stops the reading.
+Only one reply plays at a time.
 
 ### 4. Voice Assistant composer fix on Linux
 
@@ -349,6 +393,32 @@ Two details worth knowing:
 - If the program is not installed, you get that message instead of a dialog: no prompt to
   answer about something that cannot run.
 
+#### Editing both files in the app
+
+You do not have to find `~/.openwhispr` on disk. **Commands** in the sidebar — between
+Dictionary and Integrations — edits both files:
+
+- **Commands** is the alias file itself, as text, so your comments survive an edit. Saving
+  it writes the file and tells you how many commands the assistant can now ask for; a line
+  that will not parse shows up as a count that did not move. **Turn off** deletes the file,
+  which is the switch that disables running commands entirely, and **Show in folder** opens
+  it in your file manager.
+- **Reset** is the undo for emptying the list by accident, including after you have saved
+  it. It puts the list this app ships with back into the editor — the same annotated list
+  you get on a fresh install — and you press **Save** to use it. Reset only ever fills the
+  editor, so a press you didn't mean is undone by **Revert** next to it, and the same
+  button creates the file when it does not exist yet.
+- **Approved commands** is the other file, as a list, because it is generated and has
+  nothing to preserve. Remove an entry to make that command ask again, add one to stop it
+  asking, and tick **read output** for a command whose printed answer you want. "Run and
+  remember" in the approval dialog adds to this same list.
+- Below both, a read-only summary of **what the assistant can ask for** — each alias, what
+  it runs, and whether its output is read back — so you can see the effect of an edit
+  without launching anything.
+
+The files are still the source of truth and you can edit them by hand; the view re-reads
+them every time you open it.
+
 #### What it refuses
 
 A few commands are **refused outright and can never be approved**, because they destroy the
@@ -428,15 +498,40 @@ spend about 2200 of those 4096 tokens.
   app id, install directory, and in-app product strings — still say OpenWhispr, because
   renaming them changes where user data lives. Treat "Eva AI assistant" as the project
   name for now, not yet a rebranded build.
-- **No binaries.** There are no Eva releases; build from source with the steps below.
-  Prebuilt installers for the unmodified app are on
-  [upstream's releases page](https://github.com/OpenWhispr/openwhispr/releases).
+- **Downloads are Linux-only so far.** The macOS and Windows installers are not published
+  yet — see [Downloads](#downloads). macOS users can build from source with the steps below.
 - **PDF support adds a dependency** (`pdfjs-dist`), which is the single largest change to
   upstream's `package-lock.json`.
 - **The new UI strings are English-only.** They are not in the locale bundles, on purpose:
   this repo's checks require every key to exist in all 11 languages, so translating two
-  new buttons would mean touching thirteen upstream files. See `useSpeechControl.ts` and
-  `useChatAttachments.ts` for where to add them.
+  new buttons would mean touching thirteen upstream files. See `useSpeechControl.ts`,
+  `useChatAttachments.ts`, `CommandsView.tsx` and `KokoroSettings.tsx` for where to add
+  them.
+- **The Kokoro voice bundles ship `espeak-ng` data, which is GPL-3.0.** Fine for personal
+  use; worth a deliberate look before distributing a build that downloads and stores it.
+  The app's own code is MIT, and the model weights are Apache-2.0 — it is the
+  pronunciation data inside the bundle that carries the other licence. Noted here so it
+  is a decision rather than a surprise.
+
+## Downloads
+
+Prebuilt installers are attached to
+[this repo's releases](https://github.com/alexchessmaster/eva-ai-assistant/releases):
+
+| Platform                 | File                                   |
+| ------------------------ | -------------------------------------- |
+| Linux (most distros)     | `.AppImage` — `chmod +x` it and run it |
+| Debian / Ubuntu          | `.deb`                                 |
+| Fedora / RHEL / openSUSE | `.rpm`                                 |
+| Any Linux, no installer  | `.tar.gz` — unpack and run             |
+
+**Linux only, for now.** There is no macOS `.dmg` or Windows `.exe` yet; the sections
+below explain how to produce them. Building from source works on all three platforms
+today.
+
+Nothing needs to be installed first. On the first run the app downloads the models you
+choose — Whisper, Parakeet, and the Kokoro voice if you want it — into
+`~/.cache/openwhispr`. The installers themselves carry no models.
 
 ## Building
 
@@ -444,15 +539,48 @@ Requires Node.js 24+ (the pinned version in `.nvmrc`; using another major will b
 `npm ci` in CI).
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/eva-ai-assistant.git
+git clone https://github.com/alexchessmaster/eva-ai-assistant.git
 cd eva-ai-assistant
 npm install
 npm run dev
 ```
 
-Packaging is upstream's: `npm run build:linux:appimage`, `npm run build:mac`,
-`npm run build:win`. See the [upstream docs](https://docs.openwhispr.com/quickstart) for
-platform setup, code signing, and build details.
+Packaging is upstream's. `npm run build` builds for **the platform you are on** — there
+is no cross-compiling, which is why the releases above are Linux-only:
+
+```bash
+npm run build                 # whatever host you are on
+npm run build:linux           # .AppImage, .deb, .rpm and .tar.gz
+npm run build:mac             # .dmg — must be run ON a Mac
+npm run build:win             # NSIS .exe — must be run on Windows
+```
+
+Output lands in `dist/`. On Linux, `npm run build` produces exactly the four files
+listed above.
+
+**To publish a build**, create a release tagged `v<version>` (the version comes from
+`package.json` — `1.10.2` here, so `v1.10.2`) and attach the files from `dist/`:
+
+```bash
+gh release create v1.10.2 dist/*.AppImage dist/*.deb dist/*.rpm dist/*.tar.gz \
+  --title "Eva AI assistant 1.10.2" --notes "What changed in this release."
+```
+
+Or drag them onto the release page in the browser. Keep the file names exactly as
+built — they are what the in-app updater matches on.
+
+**For macOS**, build on a Mac: `npm run build:mac` produces a `.dmg` in `dist/`.
+Unsigned, it will be refused by Gatekeeper on the machines that download it ("Eva is
+damaged and can't be opened"), and the workaround — right-click → Open, or
+`xattr -dr com.apple.quarantine` — is not something to ask of users. Doing it properly
+means an Apple Developer account ($99/year) and setting `CSC_LINK` /
+`CSC_KEY_PASSWORD` for signing plus `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` /
+`APPLE_TEAM_ID` for notarization; `electron-builder` picks all of those up from the
+environment and signs automatically. Windows builds similarly want a code-signing
+certificate, or they trip SmartScreen on every download.
+
+See the [upstream docs](https://docs.openwhispr.com/quickstart) for the platform setup,
+signing, and notarization details.
 
 The mobile application lives in [`openwhispr-mobile`](openwhispr-mobile/) and is untouched
 by this fork.

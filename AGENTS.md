@@ -122,6 +122,20 @@ decided in the **main process**, never by the model or the renderer.
 feature is off, approval path included. There is no settings flag and no renderer plumbing,
 which is also why `useChatStreaming.ts` is untouched.
 
+**Every entry point into these files must default its `dir`.** `requestRun` takes
+`dir = defaultConfigDir()`, and `listAliasNames` did **not** — while `ipcHandlers.js` calls
+`listAliasNames()` with no argument. `path.join(undefined, …)` threw a `TypeError`, the
+`catch` in `readAliases` read a missing file into "no aliases" and logged a warning nobody
+saw, and so **the user's registered names never reached the model** for the life of the
+feature. The symptom is not an error: `run_command` simply arrives describing a tool with
+no known names, and the model invents `df -h` where the user's `disk space` alias exists.
+That matters because an invented command is not an alias, so it opens the approval dialog —
+and a dialog-launched command has **no output capture** (the checkbox is off by default and
+only the user can set it), so a _question_ gets an answer with nothing in it. Fixed, and
+pinned by `test/helpers/commandConfig.test.js` → "the names the model is given come from
+the file the editor writes", which drives the real `localCommands` with `electron` stubbed
+and `os.homedir()` pointed at a temp directory.
+
 **Properties to preserve** (§4 has the reasoning):
 
 1. What executes is always text a human wrote (an alias value, an approved command) or the
@@ -159,10 +173,69 @@ which is also why `useChatStreaming.ts` is untouched.
    truncates at the model's default — 4096 for `gemma4:e4b` — and what it drops is the
    **start** of the prompt, which is where the system prompt and the tool instructions live.
    Measured: ~2200 prompt tokens with nine tools and no history, so the margin is thin
-   already. A model answering "I am an AI and cannot access your files" means the tools did
-   not reach it; check the wiring before touching the prompt.
+   already. A model answering "I am an AI and cannot access your files" usually means the
+   tools did not reach it — check the wiring before touching the prompt, and see the
+   measured refusals in §4: when an explicit "run this command: …" _does_ work, the wiring
+   is not the explanation either, and the prompt is not where the answer is.
 
-### 2f. Housekeeping
+### 2f. Editing the command files in the app
+
+§2e's two files, edited from the UI: a **Commands** entry in the main-window sidebar,
+between Dictionary and Integrations.
+
+- `src/helpers/commandConfig.js` _(new)_ — the main-process read/write half, plus its own
+  `register()` called from `main.js`. Every reader/writer takes `dir` explicitly so the
+  tests touch a temp directory rather than the developer's `~/.openwhispr`.
+- `src/components/CommandsView.tsx` _(new)_ — the two editors.
+- `src/components/commands/defaultCommands.txt` _(new)_ — the list this app ships with:
+  what Reset restores and what `Create the file` writes. The format's documentation as much
+  as its data, which is why it is a real file of that format rather than a string literal.
+- `src/helpers/localCommands.js` — exports `defaultConfigDir` (one line) so the editor and
+  the runtime cannot disagree about where the files are.
+- `src/components/controlPanelNav.ts` — the view id, the icon, the nav row.
+- `src/components/ControlPanel.tsx` — a lazy import and a render branch.
+- `src/types/electron.ts`, `preload.js` — five channels, named like the existing
+  `run-command` / `get-command-aliases` pair.
+- `test/helpers/commandConfig.test.js` _(new)_ — including a test that every channel the
+  preload bridge invokes is one this module registers, so the two cannot drift.
+- `test/components/fieldDirectionPolicy.test.js` — two entries in the review record that
+  test exists to force. Adding a field to a component means adding a line here; that is
+  the test working as designed, not a merge accident.
+
+**Two shapes, on purpose.** `commands.txt` is read and written **verbatim**, because the
+shipped file is mostly comments and they are the format's documentation — a structured
+editor that re-serialised the parsed aliases would delete all of it. The parse runs
+alongside only to report what the runtime will understand. `approved-commands.json` is
+generated and has nothing to preserve, so it is a list, written in the `{command, capture}`
+shape `rememberApproved` uses.
+
+**Absent and empty are different files.** `commandsText` is null when the file is missing,
+never `""`: absent is the switch that turns the feature off (including the approval path),
+while empty is a file with no aliases that falls through to the dialog. The editor offers
+"Turn off" as a separate, confirmed action for that reason. Do not collapse the two.
+
+**Reset restores a shipped file, and writing it is the renderer's draft — not an IPC.**
+`src/components/commands/defaultCommands.txt` is the whole default list, imported with
+Vite's `?raw` rather than written as a string literal, so it stays a real file of its own
+format: diffable, highlighted, and the format's documentation as much as its data. Two
+things depend on it — Reset, and `Create the file` when the file is absent — and they share
+one handler for that reason.
+
+There is deliberately **no reset IPC and no backup file**. Reset only fills the editor's
+draft, so Save stays the single path by which `commands.txt` changes: a mis-pressed Reset is
+undone by Revert, and the restored list is visible before it takes effect. That matters most
+in the case Reset exists for, where the list was already emptied _and saved_ — by then
+Revert has nothing left to undo. (An earlier revision kept a `commands.txt.backup` and
+restored from it. It was dropped because a Reset that sometimes brings back your own last
+version and sometimes a built-in list is not something a user can predict, and the shipped
+list is the richer of the two anyway.)
+
+`test/helpers/commandConfig.test.js` → "the shipped default file is a valid commands file"
+is the guard on that asset: every non-comment line in it must parse, and at least one `!`
+read-back command must survive. A typo there is otherwise silent, because an unparseable
+line simply never matches.
+
+### 2g. Housekeeping
 
 - `README.md` — rewritten for the fork.
 - `electron-builder.json`, `package.json` — the `pdfjs-dist` dependency and its asar
@@ -192,14 +265,17 @@ Then, in order:
 
 **Conflict hot spots, in the order they are likely:**
 
-| File                                          | What will clash                                                                                    |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `package-lock.json`                           | Any dependency change upstream. Regenerate with Node 24 rather than hand-merging.                  |
-| `src/components/dictation/AssistantPanel.tsx` | Busy component; the fork adds a hook call, ChatInput props, a footer button, and an Escape branch. |
-| `src/components/chat/ChatInput.tsx`           | The fork adds props, an attach button and a paste handler around the existing input.               |
-| `src/components/chat/useChatStreaming.ts`     | The fork adds `attachments` to `SendToAIOptions` and an attachment branch in the request build.    |
-| `src/helpers/ipcHandlers.js`                  | The fork's handlers are grouped next to `select-audio-file` / `approve-audio-path`.                |
-| `src/types/electron.ts`                       | The fork's API additions sit by `getPathForFile` and `captureScreenContext`.                       |
+| File                                           | What will clash                                                                                    |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `package-lock.json`                            | Any dependency change upstream. Regenerate with Node 24 rather than hand-merging.                  |
+| `src/components/dictation/AssistantPanel.tsx`  | Busy component; the fork adds a hook call, ChatInput props, a footer button, and an Escape branch. |
+| `src/components/chat/ChatInput.tsx`            | The fork adds props, an attach button and a paste handler around the existing input.               |
+| `src/components/chat/useChatStreaming.ts`      | The fork adds `attachments` to `SendToAIOptions` and an attachment branch in the request build.    |
+| `src/helpers/ipcHandlers.js`                   | The fork's handlers are grouped next to `select-audio-file` / `approve-audio-path`.                |
+| `src/types/electron.ts`                        | The fork's API additions sit by `getPathForFile` and `captureScreenContext`.                       |
+| `src/components/controlPanelNav.ts`            | Short and stable, but the fork adds a view id and a nav row.                                       |
+| `src/components/ControlPanel.tsx`              | The fork adds one lazy import and one render branch among many.                                    |
+| `test/components/fieldDirectionPolicy.test.js` | The review record for every `Input`/`Textarea` in the app. Any new field must add a line here.     |
 
 Nothing in the fork modifies `src/locales/**` or `src/config/prompts*`, so those merge
 cleanly — that is deliberate (§4).
@@ -277,6 +353,36 @@ focus, because a modal owned by an unfocusable window can end up unclickable —
 one place the fork deliberately takes focus; it is acceptable because it only ever happens
 for a command the user (or a model acting with their consent) asked to run. Allowlisted
 commands never prompt and never take focus.
+
+**A model that refuses to look at the machine is not a prompt problem — measured, so
+stop editing the prompt.** The symptom is an answer like "I don't have access to your local
+files" to "how much space do I have left?", while "run this command: df -h" works. That
+combination means the tool reached the model and the model chose not to call it, and the
+obvious explanations were all tested against the real thing in 2026-09:
+
+- the app's actual payload — `createToolRegistry`'s real schemas, the real names parsed
+  out of a real `commands.txt`, `gemma4:e4b` on Ollama — calls
+  `run_command({"command":"disk space"})` for that exact question, and did so with the
+  **previous** wording too;
+- with 0, 4 and 120 turns of history (~1.6k → ~3.4k prompt tokens);
+- after the assistant had already refused twice in the same conversation, which is the
+  "it anchored on its own refusal" theory;
+- and with `num_ctx` forced to 2048 so Ollama truncated the history away.
+
+None of them produced a refusal. So the wording, prompt truncation, and self-anchoring are
+all ruled out, and every further round of prompt editing is guessing. Get the real request
+first (`OPENWHISPR_LOG_LEVEL=debug`, then look at what was actually sent and which tools
+were registered) before changing any text. The description was rewritten anyway — it now
+names the _question_ case, which the old one left implicit — but that was hardening, not a
+measured fix, and the difference between the two is the point of this paragraph.
+
+**What it actually was**: the missing `dir` default on `listAliasNames` (§2e), which meant
+the alias names never reached the model at all. That is the lesson — the refusal sent
+everyone looking at prompt text, while the defect was one absent default argument three
+files away from the prompt. When a tool is not being used, check what the model was
+_told_, not only what it was told to do. (The literal refusal string was never reproduced
+here even with the names absent, so treat the mechanism as established and the exact
+wording as unconfirmed.)
 
 **The pre-flight is a `which` lookup, and deliberately not on Windows.** `where` cannot see
 what `cmd.exe` resolves through App Paths, ShellExecute, or its own builtins, so a Windows

@@ -1,0 +1,122 @@
+# Eva — commands the assistant may run by name.
+#
+# Anything listed here runs immediately when the assistant asks for it, with no
+# confirmation, so keep the list to things you are happy to have launched: a
+# web page, a note, a pasted screenshot or any other text that reaches the model
+# can ask for one of these by name.
+#
+# Anything NOT listed here can still run, but only after a dialog shows you the
+# exact command and you approve it. Delete this file to turn the whole feature
+# off (the assistant will not be able to run anything at all, even with a prompt).
+#
+# Format, one per line:  name = command
+#
+# * Several names for one command are fine, separated by commas. Matching
+#   ignores case, spacing and punctuation, so "vscode", "VS Code" and "vs-code"
+#   all find the same line, and a spoken "open vscode" works too.
+# * Words after a name become arguments: "vscode ~/notes" runs `code ~/notes`.
+#   They are only passed along when they contain no shell syntax (`;`, `|`,
+#   `$(`, `>`) — anything else gets a confirmation dialog instead.
+# * A command starting with https:// is a LINK, not a program: "search
+#   capybaras" below opens your browser on the results. `%s` is replaced with
+#   the words you said, properly escaped, so a link can never be talked into
+#   running anything. Links never need a confirmation.
+# * A `!` in front of a command READS ITS OUTPUT: "ls = !ls" means saying
+#   "ls Downloads" runs `ls Downloads` and hands what it printed to the
+#   assistant, which can then tell you the answer. Without the `!` the output
+#   goes nowhere — right for a program you are opening, useless for one whose
+#   whole point is what it prints. Only mark commands that finish on their own:
+#   one still running after 10 seconds is stopped, and a command you approve in
+#   the dialog can ask for its output with the checkbox instead.
+#
+# Every program on the right of an `=` below is installed on this machine, so no
+# line here fails its pre-flight. Add your own the same way, or just ask for
+# something that is not listed and approve it when the dialog appears.
+
+# Billund weather, opened when you ask about the weather
+weather, weather today, weather billund = https://weather.com/dk/southern-denmark/city/billund/today
+
+# --- Search and lookups -----------------------------------------------------
+# The words you said replace %s, URL-encoded, so nothing here can reach a shell.
+search, google, look up = https://www.google.com/search?q=%s
+youtube = https://www.youtube.com/results?search_query=%s
+maps, map = https://www.google.com/maps/search/?api=1&query=%s
+
+# --- Editors and terminals --------------------------------------------------
+vscode, vs code = code
+insiders = code-insiders
+terminal = ghostty
+text editor = gnome-text-editor
+
+# --- Browsers and sites -----------------------------------------------------
+browser = google-chrome
+chrome = google-chrome
+firefox = firefox
+github = https://github.com
+mail, inbox = https://mail.google.com
+calendar = https://calendar.google.com
+drive = https://drive.google.com
+news = https://news.ycombinator.com
+dashboard = http://localhost:3000
+
+# --- Folders ----------------------------------------------------------------
+# Trailing words are passed along: "files /etc" opens /etc, "vscode ~/notes"
+# opens that folder in VS Code.
+files, file manager = nautilus
+downloads = nautilus ~/Downloads
+projects = nautilus ~/sites
+
+# --- Apps -------------------------------------------------------------------
+discord = discord
+telegram = telegram-desktop
+mail app = thunderbird
+music, player = vlc
+documents, word = libreoffice
+photos, image editor = gimp
+api client = postman
+torrents = qbittorrent
+video editor = shotcut
+kdenlive = kdenlive
+ebooks = calibre
+ftp = filezilla
+rancher = rancher-desktop
+
+# --- System, sound and settings ---------------------------------------------
+monitor, task manager = gnome-system-monitor
+settings = gnome-control-center
+wifi = gnome-control-center wifi
+sound settings = gnome-control-center sound
+calculator = gnome-calculator
+system logs = gnome-logs
+lock, lock screen = loginctl lock-session
+mute = wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+volume up = wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+
+volume down = wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+
+# --- Commands whose point is their output -----------------------------------
+# Two ways to get at what a command prints. The `!` form answers the question
+# through the assistant; a terminal or a notification shows it to you directly.
+ls, list files = !ls
+disk space = !df -h /
+uptime = !uptime
+memory, free memory = !free -h
+git status = !git -C ~/sites/openwhispr status --short
+who is online = !who
+#
+# A launched command gets no terminal — it is detached so it can outlive Eva —
+# so a full screen program (vim, top, ssh) has to bring its own, and a command
+# that only prints text would print it into nowhere.
+containers = ghostty -e docker ps
+pods = ghostty -e kubectl get pods
+htop = ghostty -e htop
+dev server = ghostty --working-directory=$HOME/sites/openwhispr -e npm run dev
+ip address = notify-send "IP" "$(curl -s ifconfig.me)"
+
+# A few commands are refused outright and can never be approved, because they
+# destroy the machine rather than do a job: `rm -rf /`, `rm -rf ~`, `mkfs`,
+# `dd of=/dev/sda`, fork bombs, `chmod -R 777 /`, and writing to
+# ~/.ssh/authorized_keys.
+#
+# Keep the list to single, fixed actions. A `docker` or `git` line would let the
+# model append its own arguments (only shell syntax is filtered there), which
+# runs without a dialog — so "docker ps" is fine, "docker" is not.

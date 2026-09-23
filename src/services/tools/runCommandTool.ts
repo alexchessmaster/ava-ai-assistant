@@ -16,24 +16,42 @@ const CARD_OUTPUT_CHARS = 4000;
  * model that cannot see the name `weather` sends `search for weather`, which
  * matches the user's `search` alias and opens a web search instead of the page
  * they set up.
+ *
+ * The description opens by naming the *question* case, not just the act case.
+ * Framed only as "open an application or run a program", a capable model can
+ * answer "how much disk space do I have left?" with "I don't have access to
+ * your local files" — a question about the machine does not obviously read as a
+ * request to run something. Naming the kinds of question, and giving a
+ * registered name that answers one, closes that gap.
+ *
+ * Measured, honestly: `gemma4:e4b` on Ollama already called this tool for that
+ * exact question with the *previous* wording, so this text is not the fix for a
+ * model that refuses — check the wiring (AGENTS.md §2e, README §7) before
+ * blaming the prompt. The rewrite is here because it names the case the old one
+ * left implicit, not because it was measured to change an outcome.
  */
 export function createRunCommandTool({ names = [] }: { names?: string[] } = {}): ToolDefinition {
   const registered = names.length
     ? `The user has registered these names: ${names.join(", ")}. When their request is about ` +
-      `one of them, pass that name rather than a generic command — "how's the weather" is ` +
-      `\`weather\`, not a web search, and a name that already fits beats inventing one. `
+      `one of them, pass that name rather than a generic command — "how much space do I have ` +
+      `left?" is \`disk space\`, not a refusal, and "how's the weather" is \`weather\`, not a web ` +
+      `search. A name that already fits beats inventing one. `
     : "";
 
   return {
     name: "run_command",
     description:
-      `${registered}Open an application, run a program, or look something up in the user's browser — ` +
-      `"open vscode" is \`code\`, "search for capybaras" opens a web search. Pass the user's own name ` +
+      `${registered}You are running on the user's own computer, and this is how you act on it and ` +
+      `read it. Use it to answer questions about their machine when a command can answer them — ` +
+      `free disk space, memory, what is running, the files in a folder, their IP address, uptime, a ` +
+      `git status; to open an application ("open vscode" is \`code\`); to look something up in their ` +
+      `browser ("search for capybaras"); and to run a command they dictated. Pass the user's own name ` +
       `for it if they have one, or the command itself; either works. To pass an argument, put it after ` +
       `the name, as in \`vscode ~/notes.md\`. Something that is neither registered nor previously ` +
       `approved is shown to the user for approval before it runs, so pass the real command rather than ` +
       `guessing at whether it is allowed. When the result carries output, answer the question from ` +
-      `that text — never reply that you cannot see their computer.`,
+      `that text. Never reply that you cannot access their computer, their files, or their system, ` +
+      `and never tell them to run a command themselves — you can, through this tool, so run it.`,
     parameters: {
       type: "object",
       properties: {
