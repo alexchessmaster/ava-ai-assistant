@@ -15,6 +15,7 @@ import { usePolicyStore } from "../../stores/policyStore";
 import { appendDictionarySuffix, getAgentSystemPrompt } from "../../config/prompts";
 import { getDictionaryHintWords } from "../../utils/snippets";
 import { createToolRegistry } from "../../services/tools";
+import { localModelSupportsTools } from "../../models/localModelSize";
 import type { ToolRegistry } from "../../services/tools/ToolRegistry";
 import { getAgentToolActivityRemainingMs } from "../../helpers/agentToolPresentation";
 import type {
@@ -37,13 +38,6 @@ import {
 const RAG_NOTE_LIMIT = 5;
 const RAG_NOTE_SNIPPET_LENGTH = 500;
 const STREAM_FLUSH_INTERVAL_MS = 32;
-
-const LOCAL_TOOL_MIN_PARAMS_B = 4;
-
-function estimateModelSizeB(modelId: string): number {
-  const match = modelId.match(/-([\d.]+)[bB]/);
-  return match ? parseFloat(match[1]) : 0;
-}
 
 async function buildRAGContext(userText: string, scope?: ContainerScope): Promise<string> {
   if (!window.electronAPI?.semanticSearchNotes) return "";
@@ -327,7 +321,8 @@ export function useChatStreaming({
           "corti",
         ].includes(llmConfig.provider);
       const localModelCanUseTool =
-        isLocalProvider && estimateModelSizeB(llmConfig.model) >= LOCAL_TOOL_MIN_PARAMS_B;
+        isLocalProvider &&
+        localModelSupportsTools({ modelId: llmConfig.model, isSelfHosted: isLanAgent });
       const supportsTools = isCloudAgent || !isLocalProvider || localModelCanUseTool;
 
       const scope = searchScopeRef.current;
@@ -341,7 +336,11 @@ export function useChatStreaming({
         const webSearchEnabled = isWebSearchAllowed(usePolicyStore.getState());
         // Triggers ride in the tool description, so a snippet edit rebuilds the registry.
         const snippetKey = settings.snippets.map((s) => s.trigger).join("|");
-        const cacheKey = `${settings.isSignedIn}-${calendarConnected}-${settings.cloudBackupEnabled}-${scopeKey}-${webSearchEnabled}-${snippetKey}`;
+        // The user's own names ride there too, so a model can pick `weather`
+        // instead of guessing at a search. Names only; main never sends values.
+        const commandAliases = (await window.electronAPI?.getCommandAliases?.()) ?? [];
+        const aliasKey = commandAliases.join("|");
+        const cacheKey = `${settings.isSignedIn}-${calendarConnected}-${settings.cloudBackupEnabled}-${scopeKey}-${webSearchEnabled}-${snippetKey}-${aliasKey}`;
         if (toolRegistryRef.current?.key === cacheKey) {
           registry = toolRegistryRef.current.registry;
         } else {
@@ -351,6 +350,7 @@ export function useChatStreaming({
             cloudBackupEnabled: settings.cloudBackupEnabled,
             searchScope: scope,
             webSearchEnabled,
+            commandAliases,
             vocabulary: {
               getDictionary: () => getSettings().customDictionary,
               updateDictionary: (changes) =>

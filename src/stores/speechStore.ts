@@ -4,16 +4,21 @@ import { splitForSpeech, toSpeechText } from "../utils/speechText";
 /**
  * The one thing that speaks.
  *
- * Read-aloud buttons live in three places (the Control Panel chat's messages
- * and the assistant panel's footer) and a reply can be played from any of them.
- * Giving each button its own engine instance means starting a second one
- * cancels the first at the engine level while the first button still shows a
- * stop icon for audio that already ended — so the shared state lives here.
+ * Read-aloud buttons live in three places (the chat's messages and the assistant
+ * panel's footer) and a reply can be played from any of them. Giving each button
+ * its own engine instance means starting a second one cancels the first while
+ * the first button still shows a stop icon for audio that already ended, so the
+ * shared state lives here.
  *
- * Only the built-in engine is wired up: Chromium's `speechSynthesis`, which
- * routes to the OS voices (speech-dispatcher/espeak-ng on Linux, the native
- * ones on macOS and Windows). Nothing is downloaded and nothing leaves the
- * machine.
+ * Speech is produced locally either way, and which engine is used is not a
+ * preference — it is what the platform can actually do:
+ *
+ * - macOS and Windows use Chromium's `speechSynthesis`, which routes to the
+ *   native voices.
+ * - Linux cannot: Electron ships with no speech-dispatcher linked, so
+ *   `getVoices()` comes back empty and no utterance ever plays. There the main
+ *   process drives `spd-say` instead, which is the same engine the desktop uses
+ *   for accessibility. See `src/helpers/systemSpeech.js`.
  */
 interface SpeechState {
   /**
@@ -21,63 +26,105 @@ interface SpeechState {
    * speaking. Null when nothing is playing.
    */
   speakingText: string | null;
-  /** False when the OS exposes no voices, e.g. Linux without speech-dispatcher. */
+  /** False when the platform offers no way to speak at all. */
   available: boolean;
   speak: (text: string, options?: { codePlaceholder?: string }) => void;
   stop: () => void;
 }
 
-function engine(): SpeechSynthesis | null {
+function synth(): SpeechSynthesis | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
   return window.speechSynthesis;
 }
+
+function hasWebVoices(): boolean {
+  return (synth()?.getVoices().length ?? 0) > 0;
+}
+
+const bridge = () => (typeof window === "undefined" ? undefined : window.electronAPI);
 
 export const useSpeechStore = create<SpeechState>()((set, get) => ({
   speakingText: null,
   available: false,
 
   speak: (text, options) => {
-    const synth = engine();
-    if (!synth) return;
-
     const spoken = toSpeechText(text, { codePlaceholder: options?.codePlaceholder });
-    const chunks = splitForSpeech(spoken);
-    if (chunks.length === 0) return;
-
+    if (!spoken) return;
     // Only one reply is ever read; starting another cancels the one playing.
-    synth.cancel();
-    set({ speakingText: text });
+    get().stop();
 
-    chunks.forEach((chunk, index) => {
-      const utterance = new SpeechSynthesisUtterance(chunk);
-      if (index === chunks.length - 1) {
-        // Cancelling fires neither handler, so stop() clears the state itself.
-        const finish = () => {
-          if (get().speakingText === text) set({ speakingText: null });
-        };
-        utterance.onend = finish;
-        utterance.onerror = finish;
-      }
-      synth.speak(utterance);
-    });
+    if (hasWebVoices()) {
+      const engine = synth();
+      if (!engine) return;
+      set({ speakingText: text });
+
+      const chunks = splitForSpeech(spoken);
+      chunks.forEach((chunk, index) => {
+        const utterance = new SpeechSynthesisUtterance(chunk);
+        if (index === chunks.length - 1) {
+          // Cancelling fires neither handler, so stop() clears the state itself.
+          const finish = () => {
+            if (get().speakingText === text) set({ speakingText: null });
+          };
+          utterance.onend = finish;
+          utterance.onerror = finish;
+        }
+        engine.speak(utterance);
+      });
+      return;
+    }
+
+    const speakSystem = bridge()?.systemSpeechSpeak;
+    if (!speakSystem) return;
+
+    set({ speakingText: text });
+    void speakSystem(spoken)
+      .then((accepted) => {
+        if (!accepted && get().speakingText === text) set({ speakingText: null });
+      })
+      .catch(() => {
+        if (get().speakingText === text) set({ speakingText: null });
+      });
   },
 
   stop: () => {
-    engine()?.cancel();
+    synth()?.cancel();
+    void bridge()?.systemSpeechStop?.();
     set({ speakingText: null });
   },
 }));
 
-// getVoices() is empty until the engine has loaded its voice list, and it
-// announces that with voiceschanged. Probing once at import is not enough.
-if (typeof window !== "undefined" && "speechSynthesis" in window) {
-  const probe = () => {
-    useSpeechStore.setState({
-      available: window.speechSynthesis.getVoices().length > 0,
-    });
-  };
-  probe();
-  window.speechSynthesis.addEventListener("voiceschanged", probe);
-  // A cancelled utterance would otherwise keep the cart after the panel closes.
-  window.addEventListener("beforeunload", () => window.speechSynthesis.cancel());
+function markAvailable(available: boolean) {
+  useSpeechStore.setState({ available });
+}
+
+if (typeof window !== "undefined") {
+  // Chromium's voices load asynchronously, so probing once at import is not
+  // enough — it announces the list with voiceschanged.
+  const engine = synth();
+  if (engine) {
+    // Only ever raises the flag. On Linux `voiceschanged` fires with an empty
+    // list, so letting it write `false` would disable the button again after
+    // the platform engine had already reported itself ready.
+    const probeWebVoices = () => {
+      if (engine.getVoices().length > 0) markAvailable(true);
+    };
+    probeWebVoices();
+    engine.addEventListener("voiceschanged", probeWebVoices);
+  }
+
+  // Linux has no web voices to wait for, so the platform engine decides.
+  const bridgeApi = bridge();
+  void bridgeApi?.systemSpeechStatus?.().then((status) => {
+    if (status?.available) markAvailable(true);
+  });
+
+  // The system engine's child exits when the utterance finishes; that is the
+  // only completion signal the CLI offers.
+  bridgeApi?.onSystemSpeechEnded?.(() => useSpeechStore.setState({ speakingText: null }));
+
+  window.addEventListener("beforeunload", () => {
+    synth()?.cancel();
+    void bridge()?.systemSpeechStop?.();
+  });
 }

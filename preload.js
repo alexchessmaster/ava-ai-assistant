@@ -303,6 +303,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // renderer's own file input — see useChatAttachments.
   readChatAttachment: (filePath) => ipcRenderer.invoke("read-chat-attachment", filePath),
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
+
+  // The assistant launching a local program. Main decides whether the request
+  // is allowed, and asks the user when it is not already on their alias list.
+  runCommand: (request) => ipcRenderer.invoke("run-command", request),
+  /** Just the names, so the model can pick the user's own word for something. */
+  getCommandAliases: () => ipcRenderer.invoke("get-command-aliases"),
+
+  // Read-aloud fallback for Linux, where Chromium has no speech voices.
+  systemSpeechStatus: () => ipcRenderer.invoke("system-speech-status"),
+  systemSpeechSpeak: (text) => ipcRenderer.invoke("system-speech-speak", text),
+  systemSpeechStop: () => ipcRenderer.invoke("system-speech-stop"),
+  onSystemSpeechEnded: registerListener("system-speech-ended", (callback) => () => callback()),
   getChatAttachmentPath: (file) => {
     const filePath = webUtils.getPathForFile(file);
     // Same deal as audio: only real dropped files resolve to a path, and the

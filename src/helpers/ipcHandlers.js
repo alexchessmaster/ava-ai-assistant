@@ -2904,6 +2904,28 @@ class IPCHandlers {
       return readClipboardImage();
     });
 
+    // Read-aloud fallback for Linux, where Chromium's own speech synthesis has
+    // no voices (see helpers/systemSpeech.js). macOS and Windows never call
+    // these: their Web Speech API works.
+    ipcMain.handle("system-speech-status", () => {
+      const systemSpeech = require("./systemSpeech");
+      return { available: systemSpeech.isAvailable() };
+    });
+
+    ipcMain.handle("system-speech-speak", (_event, text) => {
+      const systemSpeech = require("./systemSpeech");
+      // The child exits when the utterance finishes, which is the only
+      // completion signal the CLI offers.
+      return systemSpeech.speak(typeof text === "string" ? text : "", {
+        onEnded: () => broadcastToWindows("system-speech-ended"),
+      });
+    });
+
+    ipcMain.handle("system-speech-stop", () => {
+      const systemSpeech = require("./systemSpeech");
+      systemSpeech.stop();
+    });
+
     ipcMain.handle("get-file-size", async (_event, filePath) => {
       const fs = require("fs");
       try {
@@ -2915,6 +2937,24 @@ class IPCHandlers {
       } catch {
         return 0;
       }
+    });
+
+    // The assistant launching something local (the run_command tool). Every
+    // request is authorized in the main process — see helpers/localCommands.js
+    // and its pure policy in helpers/commandAllowlist.js — because the
+    // renderer's context (web results, notes, screenshots) is model-writable.
+    ipcMain.handle("run-command", async (event, request) => {
+      const localCommands = require("./localCommands");
+      // The sender parents the approval dialog, so it opens modal to the window
+      // the user is actually looking at.
+      return localCommands.requestRun(request, { sender: event.sender });
+    });
+
+    // The names the assistant may ask for. Names only — the values are the
+    // user's commands and URLs, and they must not travel to a model provider.
+    ipcMain.handle("get-command-aliases", () => {
+      const localCommands = require("./localCommands");
+      return localCommands.listAliasNames();
     });
 
     const activeUrlDownloads = new Map();

@@ -5,6 +5,7 @@ import { createNoteTool } from "./createNoteTool";
 import { updateNoteTool } from "./updateNoteTool";
 import { listFoldersTool } from "./listFoldersTool";
 import { clipboardTool } from "./clipboardTool";
+import { createRunCommandTool } from "./runCommandTool";
 import { webSearchTool } from "./webSearchTool";
 import { calendarTool } from "./calendarTool";
 import { calendarAvailabilityTool } from "./calendarAvailabilityTool";
@@ -24,6 +25,8 @@ interface ToolRegistrySettings {
   webSearchEnabled: boolean;
   /** Live dictionary and snippet access; enables the vocabulary tools. */
   vocabulary?: DictionaryActions & SnippetActions;
+  /** The user's own names for things, listed in the run_command description. */
+  commandAliases?: string[];
 }
 
 export function createToolRegistry(settings: ToolRegistrySettings): ToolRegistry {
@@ -36,6 +39,7 @@ export function createToolRegistry(settings: ToolRegistrySettings): ToolRegistry
   registry.register(updateNoteTool);
   registry.register(listFoldersTool);
   registry.register(clipboardTool);
+  registry.register(createRunCommandTool({ names: settings.commandAliases }));
 
   if (settings.vocabulary) {
     const snippets = settings.vocabulary.getSnippets();

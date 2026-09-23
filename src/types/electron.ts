@@ -1654,6 +1654,36 @@ declare global {
       readChatAttachment?: (filePath: string) => Promise<ChatAttachmentReadResult>;
       /** Reads an image off the OS clipboard (a pasted screenshot has no path). */
       readClipboardImage?: () => Promise<ChatAttachmentReadResult>;
+
+      /**
+       * Asks the main process to run a local command. Main authorizes it against
+       * the user's alias file and, for anything not already allowed, shows the
+       * confirmation itself — the renderer never decides this.
+       */
+      runCommand?: (request: string) => Promise<{
+        ok: boolean;
+        message: string;
+        /** Present only when the user asked for the output (a `!` alias, or the approval checkbox). */
+        capture?: {
+          output: string;
+          exitCode: number | null;
+          timedOut: boolean;
+          truncated: boolean;
+        };
+      }>;
+      /**
+       * The user's command names, for the run_command description. Names only —
+       * the commands and URLs behind them never leave the machine.
+       */
+      getCommandAliases?: () => Promise<string[]>;
+
+      // Read-aloud fallback for Linux, where Chromium's speech synthesis has no
+      // voices. macOS and Windows use the Web Speech API and never call these.
+      systemSpeechStatus?: () => Promise<{ available: boolean }>;
+      /** Resolves true when the utterance was accepted. */
+      systemSpeechSpeak?: (text: string) => Promise<boolean>;
+      systemSpeechStop?: () => Promise<void>;
+      onSystemSpeechEnded?: (callback: () => void) => () => void;
       /** Resolves a real dropped File to its path and registers it for reading. */
       getChatAttachmentPath?: (file: File) => string;
 

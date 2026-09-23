@@ -486,5 +486,18 @@ test("availability prompt context refreshes local time without rebuilding the re
   );
   assert.ok(first.includes(`IANA time zone: ${timeZone}.`));
   assert.notEqual(first, second);
-  assert.doesNotMatch(getAgentSystemPrompt(["get_calendar_events"]), /Current local date and time/);
+});
+
+test("the clock is in every agent prompt, tool or no tool", async (t) => {
+  const { getAgentSystemPrompt } = await import("../../src/config/prompts.ts");
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-08-25T10:00:00Z") });
+
+  // It used to ride along with the calendar tool only, so a user with no
+  // calendar connected asking "what time is it?" was told the assistant has no
+  // clock. Nothing about the question involves a calendar.
+  for (const tools of [undefined, [], ["get_calendar_events"], ["run_command", "search_notes"]]) {
+    const prompt = getAgentSystemPrompt(tools);
+    assert.match(prompt, /Current local date and time: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    assert.match(prompt, /you have no other clock/);
+  }
 });

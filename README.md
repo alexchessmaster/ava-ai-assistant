@@ -97,6 +97,73 @@ The overlay is now created focusable on Linux, except on the compositors whose f
 theft motivated the original flag (the wlroots family and i3), where the guard stays.
 `showInactive()` keeps the pill out of the way elsewhere, which was verified on Mutter.
 
+### 5. The assistant can open things for you
+
+Say **"open vscode"** and it runs `code`; say **"search for capybaras"** and your browser
+opens on the results. The assistant has a `run_command` tool, and what it is allowed to do
+is decided in the main process, never by the model:
+
+- Names you list in **`~/.openwhispr/commands.txt`** run immediately, with no prompt. One
+  per line, names comma-separated, `#` for comments:
+
+  ```
+  vscode, vs code      = code
+  search, look up      = https://duckduckgo.com/?q=%s
+  files                = nautilus
+  ```
+
+- A value starting with `https://` is a **link, not a program**: `%s` is replaced with what
+  you said, URL-encoded, so `search capybaras` opens a real search page. Links are the one
+  thing that never needs a confirmation — a link cannot run anything.
+- A `!` in front of a value **reads the command's output**:
+
+  ```
+  ls, list files       = !ls
+  disk space           = !df -h /
+  ```
+
+  Saying "ls Downloads" then runs `ls Downloads`, waits for it, and hands what it printed
+  to the assistant, which can answer from it ("here's what's in your Downloads folder…").
+  The wait is bounded twice: the text is capped (a command that prints forever cannot flood
+  the reply) and a command still running after 10 seconds is stopped and reported as
+  stopped, so one that never exits cannot hang the request. Only mark commands that end on
+  their own. A command approved in the dialog can ask for its output with the
+  **Show me the output** checkbox instead, which is the same thing for a one-off.
+- Anything else still runs, but only after a dialog shows you the exact command with
+  **Run / Run and remember / Cancel**. Remembered commands go in
+  `~/.openwhispr/approved-commands.json`.
+- A few commands are **refused outright and can never be approved**, because they destroy
+  the machine rather than do a job: `rm -rf /`, `rm -rf ~`, `mkfs`, `dd of=/dev/sda`, fork
+  bombs, `chmod -R 777 /`, and writes to `~/.ssh/authorized_keys`. Ordinary cleanup like
+  `rm -rf ~/Downloads/tmp` is *not* on that list — it goes to the dialog like anything else.
+
+Matching is forgiving, because what reaches the tool is a rephrasing of what you said:
+case, spacing and punctuation are ignored (`vscode`, `VS Code`, `vs-code` are one name), a
+leading verb is dropped (`open vscode`, `launch vs code`), and words after a name become
+arguments (`vscode ~/notes` runs `code ~/notes`).
+
+**The file is the switch.** Delete `commands.txt` and the tool refuses everything, including
+the approval path.
+
+Some things worth knowing, because they are the security model rather than rough edges:
+
+- An alias is standing permission, arguments included. Anything that reaches the model — a
+  web page, a note, a pasted screenshot — can ask for an alias by name and get it with no
+  prompt, and can pass it plain-word arguments (`files Downloads`). Arguments carrying shell
+  syntax are refused instead and fall through to the dialog, so an alias cannot be turned
+  into a shell. A local model is easy to confuse, so keep aliases to things whose worst case
+  is "it opened the wrong thing".
+- The dialog shows the command and nothing else; there is deliberately no model-written
+  "reason" above it to argue for the click. When a command uses shell operators (`|`, `;`,
+  `$`, `>`), the dialog says so, because that is where a confused model does damage.
+- Commands run detached, so an app you open stays open after Ava quits — and that is why
+  output only comes back when it was asked for, with a `!` alias or the dialog's checkbox.
+  The default is to walk away, because waiting on a window you just opened would be wrong.
+- Read-back output is text from your machine entering the model's context, which is a
+  channel the silent path does not have: a file name, a log line or a `curl` result could
+  contain something that looks like an instruction. Passages like that are why the read-back
+  wait is bounded and why the output is capped before the model reads it.
+
 ## Status and caveats
 
 - **Naming.** This is the fork's product name. Internal identifiers — the package name,
@@ -171,6 +238,10 @@ Issues and pull requests for the fork's own additions are welcome here. For anyt
 isn't specific to this fork, please send it to
 [upstream](https://github.com/OpenWhispr/openwhispr) instead — that's where the app is
 maintained and where the fixes belong.
+
+If you are maintaining this fork, read **[AGENTS.md](AGENTS.md)**: it lists every file this
+fork touches, the constraints that must not be undone, and how to merge upstream's changes
+without breaking them.
 
 ## License
 

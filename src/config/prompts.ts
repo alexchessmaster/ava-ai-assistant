@@ -39,6 +39,8 @@ const TOOL_INSTRUCTIONS: Record<string, string> = {
     "Use web_search for questions about current events, facts you're unsure about, or anything requiring up-to-date information.",
   copy_to_clipboard:
     "Use copy_to_clipboard when the user asks you to copy something to their clipboard.",
+  run_command:
+    "Use run_command when the user asks you to open an application or run something on their computer, or to look something up in their browser. A registered name of theirs or the real command both work, and arguments go after the name (`vscode ~/notes.md`, `search tallest mountain`). A command they have not already allowed is shown to them for approval first. When the result includes output, answer from that text: you can read their machine through this tool, so never reply that you cannot access their files. If it reports that a program is not installed, retry once with one of the registered names it lists. If the user declines or the command is refused, say so plainly and do not propose it again.",
   get_snippet:
     "Use get_snippet whenever the user names one of their saved snippets or asks to insert, use, send, or read back saved text; match the trigger even if speech transcribed it slightly differently, and reproduce the returned text verbatim.",
   update_snippets:
@@ -64,22 +66,26 @@ function formatLocalRfc3339(date: Date): string {
   );
 }
 
-function getLocalCalendarContext(): string {
+function getLocalDateTimeContext(): string {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  return `Current local date and time: ${formatLocalRfc3339(now)}. IANA time zone: ${timeZone}.`;
+  return (
+    `Current local date and time: ${formatLocalRfc3339(now)}. IANA time zone: ${timeZone}. ` +
+    "Use this whenever the answer depends on the current date or time; you have no other clock."
+  );
 }
 
 export function getAgentSystemPrompt(availableTools?: string[], noteContext?: string): string {
-  let prompt = resolvePrompt("chatAgent", { agentName: null });
+  // Always, not only alongside the calendar tool. A model has no clock of its
+  // own, so without this line "what time is it?" is answered from training data
+  // or refused outright — and gating it on the calendar meant anyone with no
+  // calendar connected got exactly that. Recomputed per call, never cached.
+  let prompt = `${resolvePrompt("chatAgent", { agentName: null })}\n\n${getLocalDateTimeContext()}`;
 
   if (availableTools && availableTools.length > 0) {
     const toolLines = availableTools.map((name) => TOOL_INSTRUCTIONS[name]).filter(Boolean);
     if (toolLines.length > 0) {
       prompt += "\n\nYou have access to tools. " + toolLines.join(" ");
-    }
-    if (availableTools.includes("get_calendar_availability")) {
-      prompt += "\n\n" + getLocalCalendarContext();
     }
   }
 
