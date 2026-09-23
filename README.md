@@ -33,7 +33,7 @@
 
 ## What Ava adds
 
-Four changes on top of upstream. Each is deliberately narrow and lives mostly in new
+Seven changes on top of upstream. Each is deliberately narrow and lives mostly in new
 files, so the fork rebases cleanly onto new OpenWhispr releases.
 
 ### 1. File attachments in the chat and the Voice Assistant
@@ -97,72 +97,330 @@ The overlay is now created focusable on Linux, except on the compositors whose f
 theft motivated the original flag (the wlroots family and i3), where the guard stays.
 `showInactive()` keeps the pill out of the way elsewhere, which was verified on Mutter.
 
-### 5. The assistant can open things for you
+### 5. The assistant can open things, run things, and read the answers back
 
-Say **"open vscode"** and it runs `code`; say **"search for capybaras"** and your browser
-opens on the results. The assistant has a `run_command` tool, and what it is allowed to do
-is decided in the main process, never by the model:
+Say **"open vscode"** and it runs `code`. Say **"search for capybaras"** and your browser
+opens on the results. Say **"ls Downloads"** and it runs the command and tells you what is
+in there. One tool (`run_command`) does all three, and everything it may do is decided in
+the **main process** — never by the model, and never by the renderer.
 
-- Names you list in **`~/.openwhispr/commands.txt`** run immediately, with no prompt. One
-  per line, names comma-separated, `#` for comments:
+#### The commands file
 
-  ```
-  vscode, vs code      = code
-  search, look up      = https://duckduckgo.com/?q=%s
-  files                = nautilus
-  ```
+Your aliases live in **`~/.openwhispr/commands.txt`**, one per line:
 
-- A value starting with `https://` is a **link, not a program**: `%s` is replaced with what
-  you said, URL-encoded, so `search capybaras` opens a real search page. Links are the one
-  thing that never needs a confirmation — a link cannot run anything.
-- A `!` in front of a value **reads the command's output**:
+```
+name, another name = the thing to run
+```
 
-  ```
-  ls, list files       = !ls
-  disk space           = !df -h /
-  ```
+Names are comma-separated so speech-to-text variance fans into one command — `vscode`,
+`vs code` and `VS Code` all land on the same line. `#` starts a comment, blank lines are
+ignored, and the value is everything after the **first** `=` (so a command may contain one).
+**This file is the switch**: delete it and the tool refuses everything, approval path
+included. There is no setting to find and no toggle to leave on.
 
-  Saying "ls Downloads" then runs `ls Downloads`, waits for it, and hands what it printed
-  to the assistant, which can answer from it ("here's what's in your Downloads folder…").
-  The wait is bounded twice: the text is capped (a command that prints forever cannot flood
-  the reply) and a command still running after 10 seconds is stopped and reported as
-  stopped, so one that never exits cannot hang the request. Only mark commands that end on
-  their own. A command approved in the dialog can ask for its output with the
-  **Show me the output** checkbox instead, which is the same thing for a one-off.
-- Anything else still runs, but only after a dialog shows you the exact command with
-  **Run / Run and remember / Cancel**. Remembered commands go in
-  `~/.openwhispr/approved-commands.json`.
-- A few commands are **refused outright and can never be approved**, because they destroy
-  the machine rather than do a job: `rm -rf /`, `rm -rf ~`, `mkfs`, `dd of=/dev/sda`, fork
-  bombs, `chmod -R 777 /`, and writes to `~/.ssh/authorized_keys`. Ordinary cleanup like
-  `rm -rf ~/Downloads/tmp` is *not* on that list — it goes to the dialog like anything else.
+#### Four kinds of value
+
+| You write                      | It is                    | What happens                                          |
+| ------------------------------ | ------------------------ | ----------------------------------------------------- |
+| `code`                         | a program                | launched detached, so it outlives Ava. **No dialog.** |
+| `https://github.com`           | a link                   | opened in your browser. **No dialog.**                |
+| `https://duckduckgo.com/?q=%s` | a search link            | `%s` takes what you said, URL-encoded                 |
+| `!df -h /`                     | a program, **read back** | runs, waits, the output goes to the assistant         |
+
+A plain program value is launched and forgotten: right for opening a window, useless for
+anything whose point is what it prints. That is what the `!` and the link forms are for.
+
+#### A starter file
+
+Copy this in and delete what you don't have installed. A name whose program is missing is
+refused with a message saying so — and naming your other aliases, so the model retries with
+one of those — so a leftover line is harmless, just noisy.
+
+```ini
+# --- the basics -------------------------------------------------------------
+vscode, vs code = code
+terminal        = ghostty
+files           = nautilus
+
+# --- looking things up ------------------------------------------------------
+# `%s` is replaced with the words you said, escaped, so a link can never be
+# talked into running anything. Links never need a confirmation.
+search, look up = https://www.google.com/search?q=%s
+youtube         = https://www.youtube.com/results?search_query=%s
+maps, map       = https://www.google.com/maps/search/?api=1&query=%s
+
+# --- sites, opened by name --------------------------------------------------
+github   = https://github.com
+mail     = https://mail.google.com
+calendar = https://calendar.google.com
+
+# --- answers, not windows ---------------------------------------------------
+# The `!` makes the assistant wait and report what the command printed.
+ls, list files = !ls
+disk space     = !df -h /
+uptime         = !uptime
+memory         = !free -h
+```
+
+#### Editors, terminals and dev tools
+
+```ini
+vscode, vs code = code
+insiders        = code-insiders
+terminal        = ghostty
+idea            = idea
+pycharm         = pycharm
+sublime         = subl
+api client      = postman
+database        = dbeaver
+```
+
+Full-screen programs (`vim`, `nvim`, `htop`, `top`, `ssh`, `lazygit`) need a terminal of
+their own — see [showing you things](#showing-you-things-not-the-assistant) below, because a
+bare `vim = vim` launches into nowhere.
+
+#### Browsers and websites
+
+```ini
+browser   = firefox
+chrome    = google-chrome
+github    = https://github.com
+mail      = https://mail.google.com
+calendar  = https://calendar.google.com
+drive     = https://drive.google.com
+news      = https://news.ycombinator.com
+dashboard = http://localhost:3000
+```
+
+Point `dashboard` at whatever you actually run locally — a dev server, a router page, a
+home-server UI.
+
+#### Searching from the assistant
+
+```ini
+search        = https://www.google.com/search?q=%s
+youtube       = https://www.youtube.com/results?search_query=%s
+maps, map     = https://www.google.com/maps/search/?api=1&query=%s
+wikipedia     = https://en.wikipedia.org/w/index.php?search=%s
+translate     = https://translate.google.com/?text=%s
+stackoverflow = https://stackoverflow.com/search?q=%s
+npm           = https://www.npmjs.com/search?q=%s
+crates        = https://crates.io/search?q=%s
+```
+
+Any site with a search box is one line: find the query parameter, put `%s` where the words
+go. "search the crates registry for serde" then opens it with the query already typed.
+
+#### Folders
+
+Words after a name are passed along as arguments, so `files Downloads` opens that folder.
+
+```ini
+files, file manager = nautilus
+downloads           = nautilus ~/Downloads
+projects            = nautilus ~/sites
+screenshots         = nautilus ~/Pictures/Screenshots
+```
+
+#### Communication, media and apps
+
+```ini
+discord  = discord
+telegram = telegram-desktop
+slack    = slack
+signal   = signal-desktop
+mail app = thunderbird
+music    = spotify
+player   = vlc
+photos   = gimp
+ebooks   = calibre
+torrents = qbittorrent
+```
+
+#### System settings and controls
+
+```ini
+monitor, task manager = gnome-system-monitor
+settings              = gnome-control-center
+wifi                  = gnome-control-center wifi
+bluetooth             = gnome-control-center bluetooth
+sound settings        = gnome-control-center sound
+calculator            = gnome-calculator
+system logs           = gnome-logs
+lock, lock screen     = loginctl lock-session
+mute                  = wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+volume up             = wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+
+volume down           = wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+```
+
+`wpctl` and `loginctl` are Linux/PipeWire. The closest equivalents elsewhere:
+
+```ini
+# macOS
+files    = open ~
+terminal = open -a Terminal
+settings = open -b com.apple.systempreferences
+mute     = osascript -e 'set volume output muted true'
+
+# Windows
+files    = explorer
+terminal = wt
+settings = start ms-settings:
+```
+
+#### Answering questions (read-back)
+
+A `!` makes the assistant wait for the command and answer from what it printed. This is the
+form to reach for whenever you want the _answer_ rather than the window.
+
+```ini
+ls, list files = !ls
+disk space     = !df -h /
+memory         = !free -h
+uptime         = !uptime
+who is online  = !who
+battery        = !upower -i $(upower -e | grep -i bat)
+git status     = !git -C ~/code/myproject status --short
+containers     = !docker ps
+pods           = !kubectl get pods
+weather report = !curl -s "wttr.in/?format=3"
+my ip          = !curl -s ifconfig.me
+```
+
+Two bounds make this safe to use, and both are worth knowing about:
+
+- **The wait is bounded.** A command still running after 10 seconds is stopped — killed as a
+  process group, not just its shell — and reported as stopped rather than as finished. So
+  only mark commands that end on their own: `!tail -f`, `!top` or a GUI app will be started
+  and then killed.
+- **The text is capped.** What the command prints is capped on the way out of the machine,
+  and capped again (much lower) on the way into the model, because a local model's context
+  window is small — see [tools and local models](#7-tools-work-with-local-models). `ls -R`
+  of a big tree is thousands of lines; the model reads the head of it.
+
+#### Showing you things (not the assistant)
+
+A launched command gets no terminal — it is detached so it can outlive Ava — so a command
+whose only job is to print has to either read back with `!` or surface itself:
+
+```ini
+top        = ghostty -e htop
+containers = ghostty -e docker ps
+logs       = ghostty -e journalctl -f
+dev server = ghostty --working-directory=$HOME/code/myproject -e npm run dev
+ip address = notify-send "IP" "$(curl -s ifconfig.me)"
+disk space = notify-send "Disk" "$(df -h / | tail -1)"
+```
+
+`notify-send` is Linux. On macOS, `osascript -e 'display notification "…"'`; on Windows, a
+PowerShell `New-BurntToastNotification` or a `msg` — or just use the `!` form and let the
+assistant tell you.
+
+#### Matching: what you say vs what you write
 
 Matching is forgiving, because what reaches the tool is a rephrasing of what you said:
-case, spacing and punctuation are ignored (`vscode`, `VS Code`, `vs-code` are one name), a
-leading verb is dropped (`open vscode`, `launch vs code`), and words after a name become
-arguments (`vscode ~/notes` runs `code ~/notes`).
 
-**The file is the switch.** Delete `commands.txt` and the tool refuses everything, including
-the approval path.
+- **Case, spacing and punctuation are ignored** — `vscode`, `VS Code` and `vs-code` are one
+  name.
+- **A leading verb is dropped** — "open vscode", "launch vs code" and "run code" all match.
+- **Words after a name become arguments** — `vscode ~/notes` runs `code ~/notes`, and
+  `files /etc` runs `nautilus /etc`. They ride along only when they contain no shell syntax;
+  anything with a `;`, `|`, `$(`, `>` or a quote goes to the dialog instead.
+- **The value works too** — saying "code" or "df -h /" hits the same line, with no dialog,
+  because a model that names the program instead of your nickname for it meant the same
+  thing.
+- **The name has to be near the start** of what the model sends (or one word in, after a
+  verb). A heavily rephrased request falls through to the dialog instead — a dialog, never a
+  wrong launch. That is deliberate: matching loosely enough to catch "how is the weather"
+  mid-sentence is also loose enough to open your Billund page for "weather copenhagen".
 
-Some things worth knowing, because they are the security model rather than rough edges:
+#### Approving something that is not in the file
 
-- An alias is standing permission, arguments included. Anything that reaches the model — a
-  web page, a note, a pasted screenshot — can ask for an alias by name and get it with no
-  prompt, and can pass it plain-word arguments (`files Downloads`). Arguments carrying shell
-  syntax are refused instead and fall through to the dialog, so an alias cannot be turned
-  into a shell. A local model is easy to confuse, so keep aliases to things whose worst case
-  is "it opened the wrong thing".
-- The dialog shows the command and nothing else; there is deliberately no model-written
-  "reason" above it to argue for the click. When a command uses shell operators (`|`, `;`,
-  `$`, `>`), the dialog says so, because that is where a confused model does damage.
-- Commands run detached, so an app you open stays open after Ava quits — and that is why
-  output only comes back when it was asked for, with a `!` alias or the dialog's checkbox.
-  The default is to walk away, because waiting on a window you just opened would be wrong.
-- Read-back output is text from your machine entering the model's context, which is a
-  channel the silent path does not have: a file name, a log line or a `curl` result could
-  contain something that looks like an instruction. Passages like that are why the read-back
-  wait is bounded and why the output is capped before the model reads it.
+Anything unlisted still runs, after a dialog showing the **exact** command with **Run /
+Run and remember / Cancel**. Enter and Escape both decline, so a stray keypress cannot
+approve anything. "Run and remember" appends to `~/.openwhispr/approved-commands.json` and
+silences that exact command from then on.
+
+Two details worth knowing:
+
+- The dialog has a **Show me the output** checkbox. Tick it and a one-off command reads back
+  like a `!` alias — and if you also pick "Run and remember", that choice is remembered with
+  it.
+- If the program is not installed, you get that message instead of a dialog: no prompt to
+  answer about something that cannot run.
+
+#### What it refuses
+
+A few commands are **refused outright and can never be approved**, because they destroy the
+machine rather than do a job: `rm -rf /`, `rm -rf ~`, `mkfs`, `dd of=/dev/sda`, fork bombs,
+`chmod -R 777 /`, and writes to `~/.ssh/authorized_keys`. Ordinary cleanup like
+`rm -rf ~/Downloads/tmp` is _not_ on that list — it goes to the dialog like anything else.
+The refusal applies to aliases too, so a `!` alias cannot be used to slip past it.
+
+#### Worth knowing, because this is the security model rather than rough edges
+
+- **An alias is standing permission, arguments included.** Anything that reaches the model —
+  a web page, a note, a pasted screenshot, a PDF you attached — can ask for an alias by name
+  and get it with no prompt, and can pass it plain-word arguments (`files Downloads`).
+  Arguments carrying shell syntax are refused and fall through to the dialog, so an alias
+  cannot be turned into a shell. Keep aliases to things whose worst case is "it opened the
+  wrong thing".
+- **Don't alias a general-purpose tool.** A `docker = docker` or `git = git` line would let
+  the model append its own arguments — only shell syntax is filtered there — and those run
+  with no dialog. `containers = !docker ps` is one fixed action; `docker` is a blank cheque.
+- **The dialog shows the command and nothing else.** There is deliberately no model-written
+  "reason" above it to argue for the click; the assistant's explanation belongs in the chat,
+  at the same trust level as everything else it says. That is also why the tool takes no
+  `reason` parameter.
+- **Output is opt-in, because waiting is usually wrong.** An app you open should outlive
+  Ava, so the default is to launch and walk away — output comes back only when you asked,
+  with a `!` alias or the checkbox. The model cannot ask for it; only you can.
+- **Read-back is a new channel.** It puts text from your machine into the model's context,
+  which the silent path does not: a file name, a log line or a `curl` result could contain
+  something shaped like an instruction. That is why the wait is bounded and the text is
+  capped before the model reads it.
+
+### 6. The assistant knows the date and time
+
+Upstream only put a clock in the agent's prompt when a calendar tool happened to be
+available, so with no calendar connected, "what time is it?" got you _"I don't have
+real-time clock access — check your phone."_ The local date and time is now part of every
+agent prompt, calendar or not, so time-relative questions ("is it too late to call?",
+"what's on tomorrow?") have something to stand on.
+
+### 7. Tools work with local models
+
+Self-hosted models were only given the tool registry when their id declared a parameter
+count of 4B or more. The parser understood `llama-3.1-8b-instruct` but not Ollama's
+`name:tag` form, so `gemma4:e4b` was estimated at 0B and served **no tools at all** — which
+is how a perfectly good model ends up insisting "I am a text-based AI and cannot run that"
+while every other part of the app is fine.
+
+- `src/models/localModelSize.ts` reads `4b`, `e4b`, `27b-a3b`, `gemma4:e4b` and friends.
+- The 4B floor still applies to models you download in-app: a 1B model handed a dozen tool
+  schemas is worse than no tools, because it will call the wrong one.
+- A **self-hosted** model whose size cannot be read at all is allowed tools. You chose it and
+  pointed the app at it; second-guessing that is not this code's job.
+
+**One caveat that will bite long conversations.** Ava does not set `num_ctx`, so Ollama uses
+the model's default — 4096 tokens for `gemma4:e4b` — and when a prompt is longer than that it
+truncates **silently**, dropping the _oldest_ part. That is the system prompt, and the tool
+instructions live there, so the symptom is a model that suddenly forgets it can run
+commands, in a conversation that was working a minute ago. Raise it for the model you use:
+
+```
+# Modelfile
+FROM gemma4:e4b
+PARAMETER num_ctx 8192
+```
+
+```
+ollama create gemma4-8k -f Modelfile
+```
+
+Then pick `gemma4-8k` in Settings → AI Models. Tools plus a system prompt plus a few turns
+of history add up faster than you would think — measured, nine tools and no history already
+spend about 2200 of those 4096 tokens.
 
 ## Status and caveats
 
