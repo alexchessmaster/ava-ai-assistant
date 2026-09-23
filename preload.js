@@ -315,6 +315,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
   systemSpeechSpeak: (text) => ipcRenderer.invoke("system-speech-speak", text),
   systemSpeechStop: () => ipcRenderer.invoke("system-speech-stop"),
   onSystemSpeechEnded: registerListener("system-speech-ended", (callback) => () => callback()),
+
+  // Local Kokoro speech. Handlers live in `src/helpers/kokoroIpc.js` rather
+  // than `ipcHandlers.js` so this fork's additions stay out of upstream files;
+  // the channel naming follows the same conventions as everything above.
+  // `kokoro-status` reports whether a model is installed, which is what makes
+  // the read-aloud button available on a machine with no OS voices.
+  kokoroStatus: () => ipcRenderer.invoke("kokoro-status"),
+  kokoroInstall: (modelId) => ipcRenderer.invoke("kokoro-install", modelId),
+  kokoroCancelDownload: (modelId) => ipcRenderer.invoke("kokoro-cancel-download", modelId),
+  kokoroDeleteModel: (modelId) => ipcRenderer.invoke("kokoro-delete-model", modelId),
+  kokoroVoices: (modelId) => ipcRenderer.invoke("kokoro-voices", modelId),
+  kokoroSynthesize: (payload) => ipcRenderer.invoke("kokoro-synthesize", payload),
+  kokoroStop: () => ipcRenderer.invoke("kokoro-stop"),
+  onKokoroDownloadProgress: registerListener(
+    "kokoro-download-progress",
+    (callback) => (_event, payload) => callback(payload)
+  ),
   getChatAttachmentPath: (file) => {
     const filePath = webUtils.getPathForFile(file);
     // Same deal as audio: only real dropped files resolve to a path, and the

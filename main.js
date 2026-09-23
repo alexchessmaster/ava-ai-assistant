@@ -997,6 +997,10 @@ async function startApp() {
   // failure before the whisper pre-warm below resolves its GPU backend.
   resetWhisperGpuFailureOnUpgrade(environmentManager);
   registerSidecars();
+  // Local Kokoro speech keeps its IPC handlers in its own module so this fork's
+  // additions stay out of ipcHandlers.js. Not a sidecar: the TTS binary is
+  // one-shot, so there is nothing to shut down here.
+  require("./src/helpers/kokoroIpc").register({ windowManager });
   startAuthBridgeServer();
 
   cliBridge = new CliBridge(ipcHandlers);

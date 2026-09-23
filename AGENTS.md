@@ -71,6 +71,23 @@ the user's own.
 - `src/hooks/useSpeechControl.ts` _(new)_ — per-button wiring and labels.
 - `src/helpers/systemSpeech.js` _(new)_ — the Linux backend, driving `spd-say`.
 
+**A locally installed Kokoro model** is the third backend, and preferred over both when it is
+present: it sounds identical on every platform, and on Linux it is the only genuinely good
+option. It is opt-in — a ~305 MB download behind a button in Settings — and downloading
+nothing changes nothing. All new files:
+
+- `src/helpers/kokoroModels.js` — the two bundles, and the pure voice-name parsing.
+- `src/helpers/kokoroEngine.js` — fetches the sherpa-onnx TTS binary **at runtime**.
+- `src/helpers/kokoroDownload.js` — bundle download, extract, delete.
+- `src/helpers/kokoroTts.js` — drives the CLI and enumerates voices.
+- `src/helpers/kokoroIpc.js` — every IPC channel, registered from `main.js`.
+- `src/stores/kokoroSpeech.ts` — chunking and Web Audio playback.
+- `src/components/settings/KokoroSettings.tsx` — the Settings block.
+
+Upstream files touched, kept deliberately tiny: `main.js` (one `require` + `register()`),
+`preload.js` (eight methods), `speechStore.ts` (three insertions), `SettingsPage.tsx` (one
+import, one mount). See §4 for the constraints that shaped this.
+
 ### 2d. Voice Assistant composer fix on Linux
 
 `src/helpers/windowConfig.js` — the overlay is created focusable on Linux except where
@@ -204,6 +221,39 @@ The `--enable-speech-dispatcher` switch changes nothing. That is why `speechStor
 falls back to `spd-say` through `systemSpeech.js` on Linux. **Do not "simplify" it back to
 the Web Speech API** — it silently disables the feature there. macOS and Windows do work
 through the Web Speech API and never touch `systemSpeech.js`.
+
+**The Kokoro engine is fetched at runtime, and the engine directory is self-contained.**
+Upstream's TTS-less sherpa-onnx binaries are bundled during `prebuild` by
+`scripts/download-sherpa-onnx.js`; doing the same for TTS would mean editing that script,
+`package.json`, and `electron-builder.json`, and then re-merging all three forever. So
+`kokoroEngine.js` downloads the release archive on demand instead — no build-time footprint
+at all. It keeps its **own copy** of the shared libraries rather than reusing
+`resources/bin/`, for two reasons: the binary's RPATH is `$ORIGIN:$ORIGIN/../lib` (verify
+with `readelf -d`), so a `bin/`+`lib/` layout resolves with no `LD_LIBRARY_PATH` on any
+platform; and upstream pins sherpa-onnx to whatever Parakeet needs, so a version bump there
+cannot break TTS here. Only four files are extracted from the ~28 MB archive — it is a whole
+distribution, and a plain `tar xf` unpacks far more than the ~34 MB actually installed.
+
+**Kokoro's performance numbers are measured, and the obvious answers are wrong.** Synthesis
+runs at ~0.17 RTF (about 6x realtime), but only with **8 threads**: measured on a 24-core
+machine, 4 threads took 3.60 s, 8 took 2.88 s, and 24 took 4.06 s for the same passage — a
+model this small thrashes when oversubscribed. Hence `KOKORO_MAX_THREADS`. And because each
+spawn reloads the model (~0.7-1.4 s), the renderer feeds the engine one `splitForSpeech`
+chunk at a time rather than one sentence at a time: a chunk is ~4-12 s of audio, so playback
+stays ahead of synthesis. Per-sentence spawns would pay the load cost every sentence and
+fall behind. Re-measure before changing either number.
+
+**Windows is gated off on purpose — do not "fix" it by adding the archive back.** The
+Windows sherpa-onnx build imports `onnxruntime.dll` by bare name, and Windows 11 ships an
+older copy in System32 that some loader configurations resolve instead; upstream works
+around it (#2054) by renaming to `ow-onnxrt.dll` and rewriting every image's PE import
+table. That cannot be verified from a Linux checkout, and shipping unverified binary
+patching is worse than not shipping the platform. With no entry in `ENGINE_ARCHIVES`,
+`getEngineDownloadUrl()` returns null and Settings reports "not available on this platform"
+rather than installing an engine the OS cannot load. Windows read-aloud is unaffected — it
+keeps using the native voices through Chromium. To add it, port `renameImportedModule` from
+`scripts/lib/pe-imports.js` into a runtime helper, apply it during extraction, and add the
+archive — with a Windows machine to test on.
 
 **The overlay `focusable` flag is load-bearing in both directions.**
 `windowConfig.js` creates the main window focusable on Linux except on wlroots/i3.

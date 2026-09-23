@@ -91,6 +91,7 @@ import LinuxPttSetupInfo from "./ui/LinuxPttSetupInfo";
 import { Toggle } from "./ui/toggle";
 import DeveloperSection from "./DeveloperSection";
 import ChatAgentSettings from "./settings/ChatAgentSettings";
+import KokoroSettings from "./settings/KokoroSettings";
 import DictationAgentSettings from "./settings/DictationAgentSettings";
 import DictationTranslationSettings from "./settings/DictationTranslationSettings";
 import InferenceConfigEditor from "./settings/InferenceConfigEditor";
@@ -4959,6 +4960,7 @@ EOF`,
                 {transcriptionMode === "local" &&
                   localTranscriptionProvider === "whisper" &&
                   renderWhisperVadSettings()}
+                <KokoroSettings />
               </div>
             )}
             renderNoteRecording={() => (

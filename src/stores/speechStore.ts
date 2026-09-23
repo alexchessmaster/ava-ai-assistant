@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { splitForSpeech, toSpeechText } from "../utils/speechText";
+import { initKokoro, startKokoro, stopKokoro } from "./kokoroSpeech";
 
 /**
  * The one thing that speaks.
@@ -53,6 +54,27 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     // Only one reply is ever read; starting another cancels the one playing.
     get().stop();
 
+    // A downloaded Kokoro model is preferred over the platform voices: it
+    // sounds the same on every machine, and on Linux it is the only good
+    // option. Returns false when it cannot take the job — not installed, or no
+    // bridge — and the platform code below then runs exactly as before. A
+    // failure on the first chunk falls back here too, with Kokoro marked
+    // unusable, so the retry lands on the platform voices instead of looping.
+    if (
+      startKokoro(spoken, {
+        onDone: () => {
+          if (get().speakingText === text) set({ speakingText: null });
+        },
+        onFallback: () => {
+          if (get().speakingText === text) set({ speakingText: null });
+          get().speak(text, options);
+        },
+      })
+    ) {
+      set({ speakingText: text });
+      return;
+    }
+
     if (hasWebVoices()) {
       const engine = synth();
       if (!engine) return;
@@ -90,6 +112,7 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
   stop: () => {
     synth()?.cancel();
     void bridge()?.systemSpeechStop?.();
+    stopKokoro();
     set({ speakingText: null });
   },
 }));
@@ -119,6 +142,13 @@ if (typeof window !== "undefined") {
     if (status?.available) markAvailable(true);
   });
 
+  // A downloaded Kokoro model is a voice as well, and the best one on offer —
+  // it can make the button available on a machine whose OS voices are missing
+  // entirely.
+  void initKokoro().then((kokoroReady) => {
+    if (kokoroReady) markAvailable(true);
+  });
+
   // The system engine's child exits when the utterance finishes; that is the
   // only completion signal the CLI offers.
   bridgeApi?.onSystemSpeechEnded?.(() => useSpeechStore.setState({ speakingText: null }));
@@ -126,5 +156,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
     synth()?.cancel();
     void bridge()?.systemSpeechStop?.();
+    stopKokoro();
   });
 }
