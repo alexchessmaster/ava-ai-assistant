@@ -77,11 +77,7 @@ function validateExtracted(modelDir) {
 async function extractBundle(archivePath, destDir) {
   const unbzip2 = require("unbzip2-stream");
   const tar = require("tar");
-  await pipeline(
-    fs.createReadStream(archivePath),
-    unbzip2(),
-    tar.x({ cwd: destDir, strip: 1 })
-  );
+  await pipeline(fs.createReadStream(archivePath), unbzip2(), tar.x({ cwd: destDir, strip: 1 }));
 }
 
 let activeDownload = null;
@@ -205,7 +201,11 @@ function cancelDownload(modelId) {
     return { success: false, error: "No download in progress", code: "NO_ACTIVE_DOWNLOAD" };
   }
   if (modelId && activeDownload.modelId !== modelId) {
-    return { success: false, error: "A different model is downloading", code: "DOWNLOAD_IN_PROGRESS" };
+    return {
+      success: false,
+      error: "A different model is downloading",
+      code: "DOWNLOAD_IN_PROGRESS",
+    };
   }
   // Extraction cannot be interrupted safely — a half-renamed model directory is
   // worse than waiting the few seconds it takes to finish.

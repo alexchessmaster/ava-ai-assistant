@@ -64,18 +64,14 @@ export interface KokoroBridge {
   kokoroInstall?: (modelId: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   kokoroCancelDownload?: (modelId?: string) => Promise<{ success: boolean; code?: string }>;
   kokoroDeleteModel?: (modelId: string) => Promise<{ success: boolean }>;
-  kokoroVoices?: (
-    modelId: string
-  ) => Promise<{ success: boolean; voices: KokoroVoice[] }>;
+  kokoroVoices?: (modelId: string) => Promise<{ success: boolean; voices: KokoroVoice[] }>;
   kokoroSynthesize?: (payload: {
     modelId: string;
     text: string;
     voiceId: number;
   }) => Promise<{ success: boolean; audio?: Uint8Array; code?: string; error?: string }>;
   kokoroStop?: () => Promise<{ success: boolean }>;
-  onKokoroDownloadProgress?: (
-    callback: (progress: KokoroDownloadProgress) => void
-  ) => () => void;
+  onKokoroDownloadProgress?: (callback: (progress: KokoroDownloadProgress) => void) => () => void;
 }
 
 export interface KokoroDownloadProgress {
@@ -181,7 +177,9 @@ let token = 0;
 
 function audioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
-  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const Ctor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return null;
   if (!context || context.state === "closed") context = new Ctor();
   return context;

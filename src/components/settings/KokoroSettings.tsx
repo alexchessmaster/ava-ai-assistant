@@ -210,8 +210,8 @@ export default function KokoroSettings() {
         // Windows, for now: the engine needs a PE import rewrite this fork has
         // not ported. Read-aloud still works there through the system voices.
         <p className="text-xs text-muted-foreground">
-          The local voice is not available on this platform yet. Replies are still read
-          aloud with your system voices.
+          The local voice is not available on this platform yet. Replies are still read aloud with
+          your system voices.
         </p>
       ) : (
         <div className="rounded-lg border border-border/70">
@@ -220,10 +220,7 @@ export default function KokoroSettings() {
             const canCancel = progress?.type === "progress" || progress?.type === "engine";
 
             return (
-              <div
-                key={model.id}
-                className="px-3 py-3 border-b border-border/60 last:border-b-0"
-              >
+              <div key={model.id} className="px-3 py-3 border-b border-border/60 last:border-b-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -327,9 +324,7 @@ export default function KokoroSettings() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium">Voice</p>
-              <p className="text-xs text-muted-foreground">
-                {voices.length} voices in this model.
-              </p>
+              <p className="text-xs text-muted-foreground">{voices.length} voices in this model.</p>
             </div>
             <Button
               variant="outline"

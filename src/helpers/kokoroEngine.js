@@ -32,11 +32,7 @@ const { pipeline } = require("stream/promises");
 const debugLogger = require("./debugLogger");
 const { getSafeTempDir } = require("./safeTempDir");
 const { getCacheRoot } = require("./modelDirUtils");
-const {
-  ENGINE_BINARY_NAME,
-  ENGINE_VERSION,
-  getEngineDownloadUrl,
-} = require("./kokoroModels");
+const { ENGINE_BINARY_NAME, ENGINE_VERSION, getEngineDownloadUrl } = require("./kokoroModels");
 const { downloadFile, createDownloadSignal, checkDiskSpace } = require("./downloadUtils");
 
 const MARKER_NAME = ".engine.json";

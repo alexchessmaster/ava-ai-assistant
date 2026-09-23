@@ -242,7 +242,9 @@ async function synthesize({ modelId, text, voiceId = 0 }) {
         // A kill is how stop() cancels, and that is not a failure — the
         // renderer treats it as "the user moved on" and stays quiet.
         if (stopRequested) {
-          reject(Object.assign(new Error("Kokoro synthesis cancelled"), { code: "KOKORO_CANCELLED" }));
+          reject(
+            Object.assign(new Error("Kokoro synthesis cancelled"), { code: "KOKORO_CANCELLED" })
+          );
           return;
         }
         debugLogger.warn("Kokoro synthesis failed", { code, stderr: stderr.slice(-500) });

@@ -22,8 +22,7 @@
  *     time. See `kokoroTts.js`.
  */
 
-const MODEL_RELEASE_BASE =
-  "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
+const MODEL_RELEASE_BASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
 
 /**
  * Files every Kokoro bundle must contain before we call it installed. The
