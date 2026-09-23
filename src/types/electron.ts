@@ -808,6 +808,44 @@ export interface ScreenContextImage {
   data: string;
 }
 
+/** Why a picked file was refused; the renderer maps these to a toast. */
+export type ChatAttachmentError =
+  | "UNSUPPORTED_TYPE"
+  | "TOO_LARGE"
+  | "UNREADABLE"
+  | "EMPTY"
+  | "BINARY"
+  | "IMAGE_TOO_LARGE"
+  | "PDF_UNREADABLE"
+  | "PDF_NO_TEXT";
+
+export interface ChatFileImageAttachment {
+  kind: "image";
+  name: string;
+  mediaType: string;
+  /** Base64 image bytes, no data-URL prefix. */
+  image: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+}
+
+/** A PDF or text file, already reduced to text by the main process. */
+export interface ChatFileDocumentAttachment {
+  kind: "document";
+  name: string;
+  text: string;
+  bytes: number;
+  truncated: boolean;
+  pageCount?: number;
+}
+
+export type ChatFileAttachment = ChatFileImageAttachment | ChatFileDocumentAttachment;
+
+export type ChatAttachmentReadResult =
+  | { ok: true; attachment: ChatFileAttachment }
+  | { ok: false; error: ChatAttachmentError | string; name?: string };
+
 export interface UpdateCheckResult {
   updateAvailable: boolean;
   version?: string;
@@ -1611,6 +1649,13 @@ declare global {
         }
       ) => Promise<{ success: boolean; text?: string; error?: string; code?: string }>;
       getPathForFile: (file: File) => string;
+
+      // Chat attachments (images, PDFs, text files)
+      readChatAttachment?: (filePath: string) => Promise<ChatAttachmentReadResult>;
+      /** Reads an image off the OS clipboard (a pasted screenshot has no path). */
+      readClipboardImage?: () => Promise<ChatAttachmentReadResult>;
+      /** Resolves a real dropped File to its path and registers it for reading. */
+      getChatAttachmentPath?: (file: File) => string;
 
       // URL audio download
       downloadUrlAudio: (

@@ -42,6 +42,13 @@ export function resolveAgentImageTarget({
   baseProviderImageWired,
   isCloudAgent,
   baseModelSupportsVision,
+  // A self-hosted or custom endpoint names its own models — gemma4:e4b is not
+  // in this registry at all — so an unknown id is no evidence the model can't
+  // see. Callers that speak for the user's own explicit choice (they attached
+  // the image themselves) pass allowUnregisteredModel; the screenshot paths
+  // keep the conservative default, where dropping beats failing the dictation.
+  baseModelUnknown = false,
+  allowUnregisteredModel = false,
 }) {
   if (!hasScreenContext) {
     return { attach: false, useVisionOverride: false };
@@ -55,6 +62,9 @@ export function resolveAgentImageTarget({
   }
   // Cloud defers the vision-model choice to the server's vision chain.
   if (baseProviderImageWired && (isCloudAgent || baseModelSupportsVision)) {
+    return { attach: true, useVisionOverride: false };
+  }
+  if (allowUnregisteredModel && baseProviderImageWired && baseModelUnknown) {
     return { attach: true, useVisionOverride: false };
   }
   return { attach: false, useVisionOverride: false };

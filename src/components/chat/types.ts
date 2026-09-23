@@ -1,3 +1,5 @@
+import type { ChatFileAttachment } from "../../types/electron";
+
 export interface ToolCallInfo {
   id: string;
   name: string;
@@ -24,5 +26,8 @@ export interface ChatImageAttachment {
   image: string;
   mediaType: string;
 }
+
+/** A file the user attached to the message they are composing. */
+export type ChatAttachment = ChatFileAttachment & { id: string };
 
 export { toolIcons } from "./toolIcons";

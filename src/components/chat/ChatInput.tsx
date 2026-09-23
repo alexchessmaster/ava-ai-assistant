@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Mic, Square, X } from "../icons";
+import { FilePlus, Mic, Square, X } from "../icons";
 import { useTranslation } from "react-i18next";
 import { cn } from "../lib/utils";
 import { SendIcon } from "../ui/SendIcon";
@@ -9,7 +9,8 @@ import { GLASS_SURFACE } from "../ui/glass";
 import { useToast } from "../ui/useToast";
 import { formatMmSs } from "../../utils/formatDuration";
 import { useVoiceDraft } from "./useVoiceDraft";
-import type { AgentState } from "./types";
+import { AttachmentTray } from "./AttachmentTray";
+import type { AgentState, ChatAttachment } from "./types";
 
 interface ChatInputProps {
   agentState: AgentState;
@@ -22,6 +23,18 @@ interface ChatInputProps {
   className?: string;
   /** Offer a mic when the input is empty; recordings transcribe into the input. */
   voiceDraft?: boolean;
+  /** Files staged for the next message (see useChatAttachments). */
+  attachments?: ChatAttachment[];
+  /** Opens the file picker. Omit to hide the attach button. */
+  onPickAttachments?: () => void | Promise<void>;
+  /** Stages the image on the clipboard. Omit to leave pasting untouched. */
+  onPasteImage?: () => void | Promise<void>;
+  onRemoveAttachment?: (id: string) => void;
+  /**
+   * A file drag is hovering the host's drop zone. The zone itself is the host's
+   * (the whole panel, not just the composer) — this only drives the feedback.
+   */
+  isDragging?: boolean;
 }
 
 function RecordingIndicator() {
@@ -61,11 +74,19 @@ export function ChatInput({
   placeholder,
   className,
   voiceDraft = false,
+  attachments,
+  onPickAttachments,
+  onPasteImage,
+  onRemoveAttachment,
+  isDragging = false,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [inputText, setInputText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  // An attachment alone is a complete message ("summarize this"), so the send
+  // affordance follows the staged files, not just the text.
+  const hasAttachments = Boolean(attachments?.length);
 
   const voice = useVoiceDraft({
     onTranscript: (text) => {
@@ -85,11 +106,11 @@ export function ChatInput({
 
   const handleSubmit = useCallback(() => {
     const text = inputText.trim();
-    if (!text || !onTextSubmit) return;
+    if ((!text && !hasAttachments) || !onTextSubmit) return;
     onTextSubmit(text);
     setInputText("");
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [inputText, onTextSubmit]);
+  }, [hasAttachments, inputText, onTextSubmit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -99,6 +120,21 @@ export function ChatInput({
       }
     },
     [handleSubmit]
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      if (!onPasteImage) return;
+      const items = Array.from(e.clipboardData?.items ?? []);
+      if (!items.some((item) => item.type.startsWith("image/"))) return;
+      // Text wins when the clipboard carries both: copying a paragraph that
+      // contains an image also puts an image item on the clipboard, and
+      // swallowing that paste would lose the text.
+      if ((e.clipboardData?.getData("text/plain") ?? "").length > 0) return;
+      e.preventDefault();
+      void onPasteImage();
+    },
+    [onPasteImage]
   );
 
   const isIdle = agentState === "idle";
@@ -113,15 +149,25 @@ export function ChatInput({
     }
   }, [isIdle]);
 
+  const showAttachButton = isIdle && Boolean(onPickAttachments);
+
   return (
     <div className={cn("shrink-0", className ?? "px-3 pb-3 pt-1")}>
+      <AttachmentTray
+        attachments={attachments ?? []}
+        onRemove={onRemoveAttachment ?? (() => {})}
+        className="mb-2 px-1"
+      />
       <div
         className={cn(
-          "flex items-center gap-2 min-h-11 ps-4 pe-1.5 rounded-full",
+          "flex items-center gap-2 min-h-11 pe-1.5 rounded-full",
+          showAttachButton ? "ps-1.5" : "ps-4",
           GLASS_SURFACE,
           "border border-black/10 dark:border-white/14",
           "transition-all duration-200",
+          isDragging && "border-primary/50 ring-2 ring-primary/25",
           isIdle &&
+            !isDragging &&
             "focus-within:border-black/15 dark:focus-within:border-white/22 focus-within:ring-[3px] focus-within:ring-primary/8"
         )}
       >
@@ -199,6 +245,28 @@ export function ChatInput({
 
         {(isIdle || isBusy) && !isVoiceRecording && !isVoiceTranscribing && (
           <div className="flex items-center gap-2 w-full">
+            {showAttachButton && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await onPickAttachments?.();
+                  // The picker is a native dialog, so the caret leaves the
+                  // composer; put it back or the user has to click to resume
+                  // typing after every attachment.
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+                aria-label={t("chat.attach.add")}
+                title={t("chat.attach.add")}
+                className={cn(
+                  "flex items-center justify-center w-7 h-7 rounded-full shrink-0",
+                  "text-muted-foreground/70 hover:text-foreground hover:bg-foreground/8",
+                  "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/30",
+                  "transition-colors duration-100"
+                )}
+              >
+                <FilePlus size={15} aria-hidden="true" />
+              </button>
+            )}
             <input
               dir="auto"
               ref={inputRef}
@@ -206,9 +274,14 @@ export function ChatInput({
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               disabled={isBusy}
               autoFocus={autoFocus}
-              placeholder={placeholder ?? t("agentMode.input.typeMessage")}
+              placeholder={
+                isDragging
+                  ? t("chat.attach.dropHint")
+                  : (placeholder ?? t("agentMode.input.typeMessage"))
+              }
               className={cn(
                 "input-inline flex-1 outline-none bg-transparent caret-primary",
                 "text-[13px] text-foreground placeholder:text-muted-foreground/70",
@@ -231,17 +304,17 @@ export function ChatInput({
               >
                 <Square size={12} className="fill-current" />
               </button>
-            ) : isIdle && (inputText.trim() || !voiceDraft) ? (
+            ) : isIdle && (inputText.trim() || hasAttachments || !voiceDraft) ? (
               <button
                 onClick={handleSubmit}
-                disabled={!inputText.trim()}
+                disabled={!inputText.trim() && !hasAttachments}
                 aria-label={t("agentMode.input.send")}
                 className={cn(
                   "rounded-full shrink-0",
                   voiceDraft && "animate-[scale-in_0.15s_ease-out_backwards]",
                   "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/30",
                   "transition-all duration-100",
-                  inputText.trim()
+                  inputText.trim() || hasAttachments
                     ? "hover:brightness-110 active:scale-95"
                     : "opacity-30 saturate-0 cursor-default"
                 )}

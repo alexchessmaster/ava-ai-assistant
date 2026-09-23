@@ -133,12 +133,17 @@ export function resolveDictationAgentVisionInference(settings, { isSignedIn = fa
  * are seeded from Chat on upgrade (settingsStore), so the fallback is not what
  * keeps them off the cloud default.
  *
- * Screenshots follow the dictation route's rules (resolveAgentImageTarget): a
+ * Images follow the dictation route's rules (resolveAgentImageTarget): a
  * configured vision override is trusted to see images and swapped in; an
- * override that cannot drops the screenshot rather than redirecting it to a
- * model the user did not choose; the base scope attaches only where its
- * provider is image-wired and the registry says its model has vision, or on
- * OpenWhispr Cloud, which vision-routes server-side.
+ * override that cannot drops the image rather than redirecting it to a model
+ * the user did not choose; the base scope attaches where its provider is
+ * image-wired and the registry says its model has vision, or on OpenWhispr
+ * Cloud, which vision-routes server-side.
+ *
+ * `allowUnregisteredModelVision` widens the last rule for a model this registry
+ * has never heard of — the case for a self-hosted or custom endpoint that names
+ * its own models. Pass it only when the user attached the image themselves; an
+ * automatic screenshot keeps the conservative drop.
  *
  * `isProviderImageWired` is injected: the provider registry reads Vite env at
  * load, which this helper's callers and tests do not all have.
@@ -148,6 +153,7 @@ export function resolveDictationAgentVisionInference(settings, { isSignedIn = fa
  *   inferenceScope?: "chatIntelligence" | "dictationAgent",
  *   hasScreenContext?: boolean,
  *   isProviderImageWired?: (providerId: string | undefined) => boolean,
+ *   allowUnregisteredModelVision?: boolean,
  * }} [options]
  * @returns {{
  *   config: import("../stores/settingsStore").ResolvedLLMConfig,
@@ -160,6 +166,7 @@ export function resolveChatStreamingInference(
     inferenceScope = "chatIntelligence",
     hasScreenContext = false,
     isProviderImageWired = () => false,
+    allowUnregisteredModelVision = false,
   } = {}
 ) {
   const onAgentScope =
@@ -177,15 +184,26 @@ export function resolveChatStreamingInference(
       ? resolveDictationAgentVisionInference(settings, { isSignedIn: !!settings.isSignedIn })
       : null;
 
+  // A self-hosted endpoint speaks OpenAI Chat Completions, so it carries image
+  // parts exactly like the BYOK client does; resolveModeProvider maps it to no
+  // provider id only because there is no BYOK provider to name.
+  const baseProviderImageWired =
+    config.mode === "self-hosted"
+      ? isProviderImageWired("lan")
+      : isProviderImageWired(
+          resolveModeProvider({ isCloud, mode: config.mode, provider: config.provider })
+        );
+  const baseModel = getCloudModel(config.model, config.provider);
+
   const { attach, useVisionOverride } = resolveAgentImageTarget({
     hasScreenContext,
     visionOverrideActive: !!vision?.active,
     visionProviderImageWired: isProviderImageWired(vision?.config.provider),
-    baseProviderImageWired: isProviderImageWired(
-      resolveModeProvider({ isCloud, mode: config.mode, provider: config.provider })
-    ),
+    baseProviderImageWired,
     isCloudAgent: isCloud,
-    baseModelSupportsVision: !!getCloudModel(config.model, config.provider)?.supportsVision,
+    baseModelSupportsVision: !!baseModel?.supportsVision,
+    baseModelUnknown: !baseModel,
+    allowUnregisteredModel: allowUnregisteredModelVision,
   });
   if (!useVisionOverride) return { config, attachScreenContext: attach };
   return {

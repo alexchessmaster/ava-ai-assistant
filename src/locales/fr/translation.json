@@ -3004,7 +3004,26 @@
     "searchChats": "Rechercher",
     "searchTitle": "Rechercher des conversations",
     "searchDescription": "Rechercher dans toutes vos conversations",
-    "newChatEmpty": "Posez des questions sur vos notes, transcriptions ou autre"
+    "newChatEmpty": "Posez des questions sur vos notes, transcriptions ou autre",
+    "attach": {
+      "add": "Joindre un fichier",
+      "remove": "Retirer {{name}}",
+      "dropHint": "Déposez des fichiers pour les joindre",
+      "truncated": "tronqué",
+      "imagesUnsupportedTitle": "Image non envoyée",
+      "imagesUnsupported": "{{model}} ne peut pas lire les images. Choisissez un modèle compatible avec les images pour l'Assistant vocal dans Paramètres → Modèles IA.",
+      "thisModel": "Le modèle sélectionné",
+      "errorTitle": "Impossible de joindre le fichier",
+      "error": {
+        "unsupported": "{{name}} n'est pas un type de fichier pris en charge",
+        "tooLarge": "{{name}} est trop volumineux pour être joint",
+        "unreadable": "{{name}} n'a pas pu être lu",
+        "pdfNoText": "{{name}} ne contient pas de texte lisible — il s'agit peut-être d'un scan",
+        "tooMany": "Vous pouvez joindre jusqu'à {{max}} fichiers",
+        "generic": "{{name}} n'a pas pu être joint"
+      },
+      "unknownName": "Ce fichier"
+    }
   },
   "referral": {
     "title": "Parrainez et gagnez des récompenses",

@@ -172,6 +172,7 @@
     "object-assign": "^4.1.1",
     "onnxruntime-node": "^1.21.0",
     "opencc-js": "^1.4.1",
+    "pdfjs-dist": "^5.7.284",
     "ps-list": "^9.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

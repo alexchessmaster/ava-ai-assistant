@@ -6,6 +6,11 @@ import { resolveSelfHostedOpenAIBase } from "../openaiBase";
 
 export const lanProvider: InferenceProvider = {
   id: "lan",
+  // Self-hosted servers are usually OpenAI-compatible and increasingly serve
+  // multimodal models (Ollama's gemma4:e4b), and the shared Chat Completions
+  // caller now carries image parts. Which of their models actually see is not
+  // knowable here, so the gate decides per request rather than per provider.
+  supportsImages: true,
   async call({ text, model, agentName, config, ctx }) {
     const isAgentCall = !!config.lanUrl;
     const settings = getSettings();

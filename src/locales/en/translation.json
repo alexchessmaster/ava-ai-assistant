@@ -3004,7 +3004,26 @@
     "searchChats": "Search chats",
     "searchTitle": "Search conversations",
     "searchDescription": "Search across all your conversations",
-    "newChatEmpty": "Ask about your notes, transcripts, or anything else"
+    "newChatEmpty": "Ask about your notes, transcripts, or anything else",
+    "attach": {
+      "add": "Attach a file",
+      "remove": "Remove {{name}}",
+      "dropHint": "Drop files to attach",
+      "truncated": "truncated",
+      "imagesUnsupportedTitle": "Image not sent",
+      "imagesUnsupported": "{{model}} can't read images. Pick a vision-capable model for the Voice Assistant in Settings → AI Models.",
+      "thisModel": "The selected model",
+      "errorTitle": "Couldn't attach file",
+      "error": {
+        "unsupported": "{{name}} isn't a supported file type",
+        "tooLarge": "{{name}} is too large to attach",
+        "unreadable": "{{name}} couldn't be read",
+        "pdfNoText": "{{name}} has no readable text — it may be a scanned document",
+        "tooMany": "You can attach up to {{max}} files",
+        "generic": "{{name}} couldn't be attached"
+      },
+      "unknownName": "That file"
+    }
   },
   "referral": {
     "title": "Refer and earn rewards",

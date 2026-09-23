@@ -3,6 +3,7 @@ import { resolvePrompt } from "./prompts/index";
 export {
   resolvePrompt,
   getDefaultPromptText,
+  appendAttachmentSuffix,
   appendDictionarySuffix,
   appendScreenContextSuffix,
   wrapCleanupTranscript,

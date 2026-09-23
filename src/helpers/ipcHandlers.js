@@ -302,6 +302,31 @@ function resolveAllowedAudioPath(filePath) {
   return null;
 }
 
+// Chat attachments are read for their text (or encoded for vision), so unlike
+// audio there is no static dir to allow: every path is approved individually,
+// either by the file dialog in main or by a real drop resolved through
+// preload's webUtils.getPathForFile.
+const approvedChatAttachmentPaths = new Set();
+
+function approveChatAttachmentPath(filePath) {
+  if (typeof filePath !== "string" || !filePath) return;
+  try {
+    approvedChatAttachmentPaths.add(fs.realpathSync(path.resolve(filePath)));
+  } catch {
+    // File vanished or unreadable; nothing to approve.
+  }
+}
+
+function resolveAllowedChatAttachmentPath(filePath) {
+  if (typeof filePath !== "string" || !filePath) return null;
+  try {
+    const real = fs.realpathSync(path.resolve(filePath));
+    return approvedChatAttachmentPaths.has(real) ? real : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildMultipartBody(fileBuffer, fileName, contentType, fields = {}) {
   const boundary = `----OpenWhispr${Date.now()}`;
   const parts = [];
@@ -2855,6 +2880,28 @@ class IPCHandlers {
     // renderer-constructed File yields "" there, so this can't be forged.
     ipcMain.on("approve-audio-path", (_event, filePath) => {
       approveAudioPath(filePath);
+    });
+
+    // Chat attachments: the renderer opens the file chooser itself (Chromium's
+    // own, not a main-process dialog), so every path here arrived from a real
+    // picked or dropped File and needs the allowlist above.
+    ipcMain.on("approve-chat-attachment-path", (_event, filePath) => {
+      approveChatAttachmentPath(filePath);
+    });
+
+    ipcMain.handle("read-chat-attachment", async (_event, filePath) => {
+      const real = resolveAllowedChatAttachmentPath(filePath);
+      if (!real) return { ok: false, error: "UNREADABLE" };
+      const { readChatAttachment } = require("./chatAttachments");
+      return await readChatAttachment(real);
+    });
+
+    // A pasted screenshot exists only as clipboard data, so it has no path to
+    // approve — the renderer never supplies anything here, main reads the
+    // clipboard itself.
+    ipcMain.handle("read-clipboard-image", async () => {
+      const { readClipboardImage } = require("./chatAttachments");
+      return readClipboardImage();
     });
 
     ipcMain.handle("get-file-size", async (_event, filePath) => {

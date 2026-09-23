@@ -224,3 +224,55 @@ test("a stale SWAYSOCK does not change Hyprland window types", () => {
     }
   );
 });
+
+// Electron's setFocusable() is macOS/Windows-only, so on Linux the creation
+// flag is final: an overlay built focusable:false can never be focused again,
+// which left the assistant panel's composer untypeable. Its `focus()` call is
+// proven to fail there. showInactive() does not focus the window even when it
+// is focusable, so only the sessions #719 was reported on keep the guard.
+test("the overlay is created focusable except where focus theft was reported", () => {
+  const focusableFor = (environment) =>
+    loadWindowConfig({ platform: "linux", environment }).MAIN_WINDOW_CONFIG.focusable;
+
+  assert.equal(
+    focusableFor({ XDG_SESSION_TYPE: "x11", XDG_CURRENT_DESKTOP: "ubuntu:GNOME" }),
+    true,
+    "Mutter/X11 is the assistant panel's composer; showInactive keeps the pill out of the way"
+  );
+  assert.equal(
+    focusableFor({ XDG_SESSION_TYPE: "x11", XDG_CURRENT_DESKTOP: "KDE" }),
+    true,
+    "KWin/X11"
+  );
+  assert.equal(
+    focusableFor({ XDG_SESSION_TYPE: "x11", XDG_CURRENT_DESKTOP: "i3" }),
+    false,
+    "i3 grabbed focus for the overlay despite showInactive (#719)"
+  );
+  assert.equal(
+    focusableFor({
+      XDG_SESSION_TYPE: "wayland",
+      WAYLAND_DISPLAY: "wayland-1",
+      XDG_CURRENT_DESKTOP: "sway",
+    }),
+    false,
+    "wlroots family"
+  );
+  assert.equal(
+    focusableFor({
+      XDG_SESSION_TYPE: "wayland",
+      WAYLAND_DISPLAY: "wayland-1",
+      XDG_CURRENT_DESKTOP: "Hyprland",
+      HYPRLAND_INSTANCE_SIGNATURE: "hyprland-instance",
+    }),
+    false,
+    "Hyprland"
+  );
+});
+
+test("macOS and Windows keep the non-focusable overlay, where it can be flipped at runtime", () => {
+  for (const platform of ["darwin", "win32"]) {
+    const windowConfig = loadWindowConfig({ platform, environment: {} });
+    assert.equal(windowConfig.MAIN_WINDOW_CONFIG.focusable, false, platform);
+  }
+});

@@ -617,6 +617,57 @@ test("BYOK base model attaches only when the registry marks it vision-capable", 
   });
 });
 
+// A self-hosted or custom endpoint names its own models — gemma4:e4b is in no
+// registry — and until now that alone refused an image the user had picked
+// themselves, even where the model demonstrably reads images elsewhere.
+test("a user-attached image reaches an unregistered model on an image-wired provider", async () => {
+  const { resolveAgentImageTarget } = await load();
+
+  assert.deepEqual(
+    resolveAgentImageTarget({ ...imageTarget, baseModelUnknown: true, allowUnregisteredModel: true }),
+    { attach: true, useVisionOverride: false }
+  );
+});
+
+test("an unregistered model still drops an automatic screenshot", async () => {
+  const { resolveAgentImageTarget } = await load();
+
+  // Dropping the image beats failing the dictation it rode in with.
+  assert.deepEqual(resolveAgentImageTarget({ ...imageTarget, baseModelUnknown: true }), {
+    attach: false,
+    useVisionOverride: false,
+  });
+});
+
+test("an unregistered model needs an image-wired provider too", async () => {
+  const { resolveAgentImageTarget } = await load();
+
+  assert.deepEqual(
+    resolveAgentImageTarget({
+      ...imageTarget,
+      baseProviderImageWired: false,
+      baseModelUnknown: true,
+      allowUnregisteredModel: true,
+    }),
+    { attach: false, useVisionOverride: false }
+  );
+});
+
+test("a known text-only model refuses the image even when it was attached by hand", async () => {
+  const { resolveAgentImageTarget } = await load();
+
+  // The registry answers here, so optimism must not override it.
+  assert.deepEqual(
+    resolveAgentImageTarget({
+      ...imageTarget,
+      baseModelUnknown: false,
+      baseModelSupportsVision: false,
+      allowUnregisteredModel: true,
+    }),
+    { attach: false, useVisionOverride: false }
+  );
+});
+
 test("an unwired base provider never gets the image", async () => {
   const { resolveAgentImageTarget } = await load();
 

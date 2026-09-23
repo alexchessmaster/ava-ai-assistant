@@ -3534,7 +3534,26 @@
     "searchChats": "Buscar chats",
     "searchTitle": "Buscar conversaciones",
     "searchDescription": "Buscar en todas tus conversaciones",
-    "newChatEmpty": "Pregunta sobre tus notas, transcripciones o lo que quieras"
+    "newChatEmpty": "Pregunta sobre tus notas, transcripciones o lo que quieras",
+    "attach": {
+      "add": "Adjuntar un archivo",
+      "remove": "Quitar {{name}}",
+      "dropHint": "Suelta archivos para adjuntarlos",
+      "truncated": "truncado",
+      "imagesUnsupportedTitle": "Imagen no enviada",
+      "imagesUnsupported": "{{model}} no puede leer imágenes. Elige un modelo compatible con imágenes para el Asistente de voz en Ajustes → Modelos de IA.",
+      "thisModel": "El modelo seleccionado",
+      "errorTitle": "No se pudo adjuntar el archivo",
+      "error": {
+        "unsupported": "{{name}} no es un tipo de archivo compatible",
+        "tooLarge": "{{name}} es demasiado grande para adjuntarlo",
+        "unreadable": "No se pudo leer {{name}}",
+        "pdfNoText": "{{name}} no tiene texto legible; puede ser un documento escaneado",
+        "tooMany": "Puedes adjuntar hasta {{max}} archivos",
+        "generic": "No se pudo adjuntar {{name}}"
+      },
+      "unknownName": "Ese archivo"
+    }
   },
   "support": {
     "documentation": "Documentación",

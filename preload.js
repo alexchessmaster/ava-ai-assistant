@@ -299,6 +299,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return filePath;
   },
 
+  // Chat attachments (images, PDFs, text files). The chooser itself is the
+  // renderer's own file input — see useChatAttachments.
+  readChatAttachment: (filePath) => ipcRenderer.invoke("read-chat-attachment", filePath),
+  readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
+  getChatAttachmentPath: (file) => {
+    const filePath = webUtils.getPathForFile(file);
+    // Same deal as audio: only real dropped files resolve to a path, and the
+    // main-process allowlist needs it registered before it will read them.
+    if (filePath) ipcRenderer.send("approve-chat-attachment-path", filePath);
+    return filePath;
+  },
+
   // URL audio download
   downloadUrlAudio: (url, downloadId) => ipcRenderer.invoke("download-url-audio", url, downloadId),
   cancelUrlDownload: (downloadId) => ipcRenderer.invoke("cancel-url-download", downloadId),

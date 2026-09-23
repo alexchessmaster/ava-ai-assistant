@@ -5,12 +5,14 @@ import { useChatStreaming } from "./useChatStreaming";
 import { useChatMessageSender } from "./useChatMessageSender";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
+import { useChatAttachments } from "./useChatAttachments";
 import { ChatEmptyIllustration } from "./ChatEmptyIllustration";
 import ConversationList from "./ConversationList";
 import EmptyChatState from "./EmptyChatState";
 import { ConfirmDialog } from "../ui/dialog";
 import { PAGE_CONTENT_WIDTH_CLASS } from "../ui/pageWidth";
 import { useDialogs } from "../../hooks/useDialogs";
+import { useToast } from "../ui/useToast";
 import { getCachedPlatform } from "../../utils/platform";
 
 const CommandSearch = lazy(() => import("../CommandSearch"));
@@ -31,6 +33,7 @@ function NewChatEmptyState() {
 
 export default function ChatView() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [isNewChat, setIsNewChat] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -50,6 +53,14 @@ export default function ChatView() {
     setMessages: persistence.setMessages,
     onStreamComplete: (_id, content, toolCalls) => {
       persistence.saveAssistantMessage(content, toolCalls);
+    },
+    onImagesUnsupported: (model) => {
+      toast({
+        title: t("chat.attach.imagesUnsupportedTitle"),
+        description: t("chat.attach.imagesUnsupported", {
+          model: model || t("chat.attach.thisModel"),
+        }),
+      });
     },
   });
 
@@ -77,13 +88,37 @@ export default function ChatView() {
     [persistence]
   );
   const markChatStarted = useCallback(() => setIsNewChat(false), []);
-  const handleTextSubmit = useChatMessageSender({
+  const sendMessage = useChatMessageSender({
     conversationId: activeConversationId,
     persistence,
     streaming,
     createConversation,
     onBeforeSend: markChatStarted,
   });
+
+  const {
+    attachments,
+    isDragging,
+    pickAttachments,
+    pasteImage,
+    removeAttachment,
+    clearAttachments,
+    dropHandlers,
+  } = useChatAttachments();
+
+  const handleTextSubmit = useCallback(
+    (text: string): void => {
+      if (attachments.length === 0) {
+        void sendMessage(text);
+        return;
+      }
+      void sendMessage(text, { attachments }).then((sent) => {
+        // The submission lock refused the send, so the files never left.
+        if (sent) clearAttachments();
+      });
+    },
+    [attachments, clearAttachments, sendMessage]
+  );
 
   const handleArchive = useCallback(
     async (id: number) => {
@@ -161,7 +196,13 @@ export default function ChatView() {
             refreshKey={refreshKey}
           />
         </div>
-        <div className="flex-1 min-w-80 flex flex-col">
+        {/* The messages and composer together are the drop zone. */}
+        <div
+          className={`flex-1 min-w-80 flex flex-col ${
+            isDragging ? "rounded-lg ring-2 ring-inset ring-primary/20" : ""
+          }`}
+          {...dropHandlers}
+        >
           {hasActiveChat ? (
             <>
               <ChatMessages
@@ -178,6 +219,11 @@ export default function ChatView() {
                   onCancel={streaming.cancelStream}
                   autoFocus={isNewChat}
                   voiceDraft
+                  attachments={attachments}
+                  onPickAttachments={pickAttachments}
+                  onPasteImage={pasteImage}
+                  onRemoveAttachment={removeAttachment}
+                  isDragging={isDragging}
                 />
               </div>
             </>

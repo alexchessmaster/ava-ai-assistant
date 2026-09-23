@@ -28,6 +28,21 @@ function resolveOverlayWindowType({ role, platform, linuxSession }) {
 }
 
 const linuxSession = getLinuxSessionInfo();
+
+// The overlay must never *steal* focus (#719 — it broke auto-paste), but the
+// assistant panel's composer has to be able to *take* it. Electron's
+// setFocusable() is macOS/Windows-only, so on Linux this creation flag is
+// final: a window built with focusable:false can never be focused again, and
+// the panel's composer is left untypeable no matter what the renderer does.
+// Verified on Mutter/X11: showInactive() does not focus the window even when
+// it is focusable, so only the compositors that grabbed focus despite
+// showInactive() — the wlroots family and i3, where #719 was reported — keep
+// the guard. macOS/Windows keep it too and flip it at runtime.
+const overlayCannotTakeFocus =
+  process.platform !== "linux" ||
+  linuxSession.isWlroots ||
+  /i3/.test(linuxSession.desktopEnv || "");
+
 const OVERLAY_WINDOW_TYPES = {
   main: resolveOverlayWindowType({ role: "main", platform: process.platform, linuxSession }),
   notification: resolveOverlayWindowType({
@@ -196,7 +211,7 @@ const MAIN_WINDOW_CONFIG = {
   transparent: true,
   show: false,
   skipTaskbar: true,
-  focusable: false,
+  focusable: !overlayCannotTakeFocus,
   visibleOnAllWorkspaces: process.platform !== "win32",
   fullScreenable: false,
   hasShadow: false,

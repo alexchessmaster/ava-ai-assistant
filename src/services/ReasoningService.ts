@@ -40,6 +40,7 @@ import { getModelFamilyConstraints } from "./ai/modelFamilyConstraints";
 import { detectEndpointDialect } from "./ai/thinkingSuppressionDialects";
 import { openCodeSessionHeaders } from "./ai/openCodeSession";
 import { createStreamingThinkFilter } from "./ai/streamingThinkFilter";
+import { toChatCompletionsContent } from "./ai/chatCompletionsContent";
 import { extractApiErrorMessage } from "./ai/apiErrorMessage";
 import { clearTinfoilClientCache } from "./ai/tinfoilClient";
 import { resolveChatRoute } from "../helpers/chatRouting";
@@ -294,9 +295,23 @@ class ReasoningService extends BaseReasoningService {
     const systemPrompt = config.systemPrompt || this.getSystemPrompt(agentName);
     const userPrompt = isCleanup ? wrapCleanupTranscript(text) : text;
 
+    // Image-bearing requests need the user turn as content parts rather than a
+    // bare string; this is the same shape openai.ts builds for the Chat
+    // Completions dialect, shared here by the LAN, Groq and Corti providers.
+    const imageDataUrl = config.screenContext
+      ? `data:${config.screenContext.mediaType};base64,${config.screenContext.data}`
+      : null;
     const messages = [
       { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
+      {
+        role: "user",
+        content: imageDataUrl
+          ? [
+              { type: "text", text: userPrompt },
+              { type: "image_url", image_url: { url: imageDataUrl } },
+            ]
+          : userPrompt,
+      },
     ];
 
     const requestBody: any = { model, messages };
@@ -554,7 +569,9 @@ class ReasoningService extends BaseReasoningService {
   }
 
   private async *processTextStreamingRaw(
-    messages: Array<{ role: string; content: string }>,
+    // Content parts describe an attached image, and go into the request body
+    // exactly as the endpoint expects them (see toChatCompletionsContent).
+    messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }>,
     model: string,
     provider: string,
     config: ReasoningConfig & { systemPrompt: string },
@@ -785,10 +802,18 @@ class ReasoningService extends BaseReasoningService {
     const isLanChat = route.kind === "self-hosted";
 
     if ((isLocalProvider || isLanChat) && !tools) {
-      // Attachments are never routed to local/LAN providers, so content is string-only here.
+      // This transport writes the Chat Completions request body itself, so an
+      // attached image has to arrive as an OpenAI image_url part rather than
+      // the AI SDK's own part shape. llama.cpp has no image lane at all, so its
+      // messages stay string-only (the gate never attaches there).
       try {
         const contentGen = this.processTextStreamingRaw(
-          messages as Array<{ role: string; content: string }>,
+          messages.map(({ role, content }) => ({
+            role,
+            content: Array.isArray(content)
+              ? toChatCompletionsContent(content, isLanChat)
+              : content,
+          })),
           model,
           provider,
           config,

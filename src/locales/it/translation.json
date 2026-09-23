@@ -3481,7 +3481,26 @@
     "searchChats": "Cerca chat",
     "searchTitle": "Cerca conversazioni",
     "searchDescription": "Cerca in tutte le conversazioni",
-    "newChatEmpty": "Chiedi delle tue note, trascrizioni o qualsiasi altra cosa"
+    "newChatEmpty": "Chiedi delle tue note, trascrizioni o qualsiasi altra cosa",
+    "attach": {
+      "add": "Allega un file",
+      "remove": "Rimuovi {{name}}",
+      "dropHint": "Trascina i file per allegarli",
+      "truncated": "troncato",
+      "imagesUnsupportedTitle": "Immagine non inviata",
+      "imagesUnsupported": "{{model}} non può leggere le immagini. Scegli un modello compatibile con le immagini per l'Assistente vocale in Impostazioni → Modelli IA.",
+      "thisModel": "Il modello selezionato",
+      "errorTitle": "Impossibile allegare il file",
+      "error": {
+        "unsupported": "{{name}} non è un tipo di file supportato",
+        "tooLarge": "{{name}} è troppo grande per essere allegato",
+        "unreadable": "Non è stato possibile leggere {{name}}",
+        "pdfNoText": "{{name}} non contiene testo leggibile — potrebbe essere una scansione",
+        "tooMany": "Puoi allegare fino a {{max}} file",
+        "generic": "Non è stato possibile allegare {{name}}"
+      },
+      "unknownName": "Quel file"
+    }
   },
   "support": {
     "documentation": "Documentazione",

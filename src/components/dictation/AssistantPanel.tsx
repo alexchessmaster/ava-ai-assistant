@@ -8,6 +8,7 @@ import { useChatPersistence } from "../chat/useChatPersistence";
 import { useChatStreaming } from "../chat/useChatStreaming";
 import { useChatMessageSender } from "../chat/useChatMessageSender";
 import { ChatInput } from "../chat/ChatInput";
+import { useChatAttachments } from "../chat/useChatAttachments";
 import { useWindowDrag } from "../../hooks/useWindowDrag";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { formatHotkeyListLabel } from "../../utils/hotkeys";
@@ -121,6 +122,14 @@ export function AssistantPanel({
       void persistence.saveAssistantMessage(content, toolCalls);
     },
     onResponseContent,
+    onImagesUnsupported: (model) => {
+      toast({
+        title: t("chat.attach.imagesUnsupportedTitle"),
+        description: t("chat.attach.imagesUnsupported", {
+          model: model || t("chat.attach.thisModel"),
+        }),
+      });
+    },
   });
 
   const createConversation = useCallback(
@@ -132,6 +141,15 @@ export function AssistantPanel({
   );
 
   const [submissionInFlight, setSubmissionInFlight] = useState(false);
+  const {
+    attachments: stagedAttachments,
+    isDragging,
+    pickAttachments,
+    pasteImage,
+    removeAttachment,
+    clearAttachments,
+    dropHandlers,
+  } = useChatAttachments();
   const sendMessage = useChatMessageSender({
     conversationId: persistence.conversationId,
     persistence,
@@ -325,9 +343,28 @@ export function AssistantPanel({
       if (!historyReady) return;
       const context = selectedContext;
       if (context) clearSelectedContext();
-      void sendMessage(text, context ? { selectedContext: context } : undefined);
+      const options = {
+        ...(context ? { selectedContext: context } : {}),
+        ...(stagedAttachments.length ? { attachments: stagedAttachments } : {}),
+      };
+      if (!Object.keys(options).length) {
+        void sendMessage(text);
+        return;
+      }
+      void sendMessage(text, options).then((sent) => {
+        // Another submission held the lock, so the files never left: keep them
+        // staged for the retry rather than silently dropping the user's picks.
+        if (sent) clearAttachments();
+      });
     },
-    [clearSelectedContext, historyReady, selectedContext, sendMessage]
+    [
+      clearAttachments,
+      clearSelectedContext,
+      historyReady,
+      selectedContext,
+      sendMessage,
+      stagedAttachments,
+    ]
   );
 
   const showEmptyState =
@@ -341,6 +378,12 @@ export function AssistantPanel({
   useEffect(() => {
     if (!open && selectedContext) clearSelectedContext();
   }, [clearSelectedContext, open, selectedContext]);
+
+  // The panel stays mounted between openings, so staged files would otherwise
+  // reappear on the next one as if the user had just picked them.
+  useEffect(() => {
+    if (!open) clearAttachments();
+  }, [clearAttachments, open]);
 
   useEffect(() => {
     if (!open || !isResponseReady || !latestAssistantMessage) return undefined;
@@ -487,7 +530,14 @@ export function AssistantPanel({
         </div>
       </header>
 
-      <div className="relative mx-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/40 bg-surface-1 shadow-inner">
+      {/* The whole body is the drop zone, not just the composer, so a file can
+          be dropped anywhere on the panel the user is looking at. */}
+      <div
+        className={`relative mx-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-surface-1 shadow-inner ${
+          isDragging ? "border-primary/50 ring-2 ring-primary/25" : "border-border/40"
+        }`}
+        {...dropHandlers}
+      >
         <main
           data-panel-scroll-region
           className="agent-chat-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4"
@@ -541,6 +591,11 @@ export function AssistantPanel({
           }
           autoFocus={historyReady && open && messages.length === 0}
           className="px-3 pb-3"
+          attachments={stagedAttachments}
+          onPickAttachments={pickAttachments}
+          onPasteImage={pasteImage}
+          onRemoveAttachment={removeAttachment}
+          isDragging={isDragging}
         />
 
         {showContentFlourish && (

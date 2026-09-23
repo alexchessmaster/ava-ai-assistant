@@ -280,8 +280,13 @@ test("a vision scope with its own endpoint never borrows the agent's key", async
 // The assistant panel answers spoken commands on the Voice Assistant scope —
 // the tab the user actually edits — and gates screenshots exactly like the
 // dictation route does.
+// Mirrors PROVIDER_REGISTRY's supportsImages flags. `custom` and `openrouter`
+// reuse the openai client, and the self-hosted lane speaks the same Chat
+// Completions dialect that carries image parts.
 const imageWired = (providerId) =>
-  ["openai", "anthropic", "gemini", "openwhispr"].includes(providerId);
+  ["openai", "custom", "openrouter", "anthropic", "gemini", "openwhispr", "lan"].includes(
+    providerId
+  );
 const panelSettings = {
   ...baseSettings,
   isSignedIn: false,
@@ -452,4 +457,54 @@ test("a vision override that cannot see images drops the screenshot instead of r
 
   assert.equal(config.scope, "dictationAgent");
   assert.equal(attachScreenContext, false);
+});
+
+// A self-hosted endpoint names its own models (Ollama's gemma4:e4b is in no
+// registry), so the registry cannot answer whether the model sees images.
+// When the user attached the image themselves, send it and let the endpoint
+// decide; an automatic screenshot keeps the conservative drop.
+const selfHosted = {
+  ...panelSettings,
+  dictationAgentMode: "self-hosted",
+  dictationAgentRemoteUrl: "http://127.0.0.1:11434/v1",
+  dictationAgentModel: "gemma4:e4b",
+};
+
+test("a user-attached image reaches a self-hosted model the registry doesn't know", () => {
+  const { config, attachScreenContext } = panel(selfHosted, {
+    hasScreenContext: true,
+    allowUnregisteredModelVision: true,
+  });
+
+  assert.equal(config.scope, "dictationAgent");
+  assert.equal(attachScreenContext, true);
+});
+
+test("the same self-hosted model drops an unattended screenshot", () => {
+  const { attachScreenContext } = panel(selfHosted, { hasScreenContext: true });
+
+  assert.equal(attachScreenContext, false);
+});
+
+test("a custom endpoint's own model id takes an attached image the same way", () => {
+  const { attachScreenContext } = panel(
+    {
+      ...panelSettings,
+      dictationAgentProvider: "custom",
+      dictationAgentModel: "some-local-vl-model",
+      dictationAgentCloudBaseUrl: "http://127.0.0.1:11434/v1",
+    },
+    { hasScreenContext: true, allowUnregisteredModelVision: true }
+  );
+
+  assert.equal(attachScreenContext, true);
+});
+
+test("a registered text-only model still refuses an attached image", () => {
+  const { attachScreenContext } = panel(
+    { ...panelSettings, dictationAgentProvider: "groq", dictationAgentModel: "openai/gpt-oss-120b" },
+    { hasScreenContext: true, allowUnregisteredModelVision: true }
+  );
+
+  assert.equal(attachScreenContext, false, "the registry knows this one, and it has no vision");
 });

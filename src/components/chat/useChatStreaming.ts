@@ -13,20 +13,27 @@ import {
 } from "../../stores/policyRules";
 import { usePolicyStore } from "../../stores/policyStore";
 import {
+  appendAttachmentSuffix,
   appendDictionarySuffix,
-  appendScreenContextSuffix,
   getAgentSystemPrompt,
 } from "../../config/prompts";
 import { getDictionaryHintWords } from "../../utils/snippets";
 import { createToolRegistry } from "../../services/tools";
 import type { ToolRegistry } from "../../services/tools/ToolRegistry";
 import { getAgentToolActivityRemainingMs } from "../../helpers/agentToolPresentation";
-import type { Message, AgentState, ChatImageAttachment, ToolCallInfo } from "./types";
+import type {
+  Message,
+  AgentState,
+  ChatAttachment,
+  ChatImageAttachment,
+  ToolCallInfo,
+} from "./types";
 import type { ContainerScope } from "../../types/chat";
 import {
   buildAgentRequestText,
   type AgentSelectionContext,
 } from "../../utils/agentSelectionContext";
+import { buildAttachmentRequestText } from "../../utils/chatAttachmentContext";
 
 const RAG_NOTE_LIMIT = 5;
 const RAG_NOTE_SNIPPET_LENGTH = 500;
@@ -85,11 +92,23 @@ interface UseChatStreamingOptions {
   onStreamComplete?: (assistantId: string, content: string, toolCalls?: ToolCallInfo[]) => void;
   /** Fires exactly once when displayable assistant content or tool activity becomes available. */
   onResponseContent?: () => void;
+  /**
+   * Fires when an image the user attached could not be sent because the
+   * resolved model can't see images. Receives the model that refused it. The
+   * host owns the message (this hook has no UI dependencies of its own).
+   */
+  onImagesUnsupported?: (modelLabel: string) => void;
 }
 
 export interface SendToAIOptions {
   /** Screenshot for this message; attached only when the resolved model can see it. */
   attachment?: ChatImageAttachment;
+  /**
+   * Files the user attached to this message. Images take the same vision route
+   * (and the same gating) as a screenshot; text and PDF content is folded into
+   * the request without touching the stored or displayed message.
+   */
+  attachments?: ChatAttachment[];
   /** Agent-response selection attached to this request without changing chat history. */
   selectedContext?: AgentSelectionContext;
   /** Keeps a caret-destined voice response in the compact pill while it streams. */
@@ -134,6 +153,7 @@ export function useChatStreaming({
   searchScope,
   onStreamComplete,
   onResponseContent,
+  onImagesUnsupported,
 }: UseChatStreamingOptions): ChatStreaming {
   const { t } = useTranslation();
   const [agentState, setAgentState] = useState<AgentState>("idle");
@@ -237,12 +257,36 @@ export function useChatStreaming({
         if (!options?.suppressResponseContent) onResponseContent?.();
       };
       const settings = getSettings();
+      const userAttachments = options?.attachments ?? [];
+      // A voice command's screenshot and any image the user attached share one
+      // vision decision; text-bearing attachments are folded into the text.
+      const userImages = userAttachments.flatMap((a) =>
+        a.kind === "image" ? [{ image: a.image, mediaType: a.mediaType }] : []
+      );
+      const imageAttachments: ChatImageAttachment[] = [
+        ...(options?.attachment ? [options.attachment] : []),
+        ...userImages,
+      ];
+      const documents = userAttachments.flatMap((a) =>
+        a.kind === "document" ? [{ name: a.name, text: a.text }] : []
+      );
       const { config: llmConfig, attachScreenContext } = resolveChatStreamingInference(settings, {
         inferenceScope,
-        hasScreenContext: !!options?.attachment,
+        hasScreenContext: imageAttachments.length > 0,
         isProviderImageWired: providerSupportsImages,
+        // A self-hosted or custom endpoint's own model ids (gemma4:e4b) are in
+        // no registry, and refusing them is wrong when the user picked the
+        // image themselves. A screenshot is still gated conservatively.
+        allowUnregisteredModelVision: userImages.length > 0,
       });
-      const requestedAttachment = attachScreenContext ? (options?.attachment ?? null) : null;
+      const requestedImages = attachScreenContext ? imageAttachments : [];
+      if (userImages.length > 0 && !attachScreenContext) {
+        // The resolver drops images the resolved model can't see. A dropped
+        // screenshot stays silent — that drop is a deliberate fallback — but a
+        // picture the user just attached would read as a broken feature, so
+        // name the model and let the host say so. The message still goes.
+        onImagesUnsupported?.(llmConfig.model || llmConfig.provider || "");
+      }
       const llmMode = llmConfig.mode || "openwhispr";
       const policyState = usePolicyStore.getState();
       const policyProvider =
@@ -347,30 +391,46 @@ export function useChatStreaming({
         );
       }
 
-      // A screenshot the resolver kept rides with the command it came with:
-      // BYOK models get it as an image part, the cloud agent as a dedicated
-      // field the server vision-routes (older servers strip the unknown field,
-      // which degrades to a plain command). A dropped one costs nothing but the
+      // Images the resolver kept ride with the command they came with: BYOK
+      // models get them as image parts, the cloud agent as a dedicated field
+      // the server vision-routes (older servers strip the unknown field, which
+      // degrades to a plain command). A dropped one costs nothing but the
       // image — the command still runs.
-      const attachment = requestedAttachment && !isCloudAgent ? requestedAttachment : null;
+      const byokImages = isCloudAgent ? [] : requestedImages;
+      // That cloud field carries a single image, so only the first rides along
+      // there; multi-image requests are a BYOK-only affordance for now.
       const cloudScreenContext =
-        requestedAttachment && isCloudAgent
-          ? { data: requestedAttachment.image, mediaType: requestedAttachment.mediaType }
+        isCloudAgent && requestedImages.length
+          ? { data: requestedImages[0].image, mediaType: requestedImages[0].mediaType }
           : null;
-      if (attachment) {
-        // The screenshot needs its grounding instruction, exactly like the
-        // dictation path pairs the suffix with an attached image. Restore it
-        // for cloud context once openwhispr-api#157 vision-routes that field.
-        systemPrompt = appendScreenContextSuffix(systemPrompt, settings.uiLanguage);
+      if (byokImages.length) {
+        // Images need their grounding instruction, exactly like the dictation
+        // path pairs the suffix with an attached screenshot. A user-picked
+        // picture is not a screenshot, so it gets its own wording. Restore the
+        // screen-context suffix for cloud once openwhispr-api#157 vision-routes
+        // that field.
+        systemPrompt = appendAttachmentSuffix(systemPrompt, "image", settings.uiLanguage);
       }
-      if (attachment) {
-        transformLastUserMessage(history, (message) => ({
-          role: "user",
-          content: [
-            { type: "text", text: message.content as string },
-            { type: "image", image: attachment.image, mediaType: attachment.mediaType },
-          ],
-        }));
+      if (documents.length) {
+        systemPrompt = appendAttachmentSuffix(systemPrompt, "document", settings.uiLanguage);
+      }
+      if (byokImages.length || documents.length) {
+        transformLastUserMessage(history, (message) => {
+          if (typeof message.content !== "string") return null;
+          const text = buildAttachmentRequestText(message.content, documents);
+          if (byokImages.length === 0) return { role: "user", content: text };
+          return {
+            role: "user",
+            content: [
+              { type: "text", text },
+              ...byokImages.map((image) => ({
+                type: "image",
+                image: image.image,
+                mediaType: image.mediaType,
+              })),
+            ],
+          };
+        });
       }
 
       const llmMessages = [{ role: "system", content: systemPrompt }, ...history];
@@ -628,6 +688,7 @@ export function useChatStreaming({
       setMessages,
       onStreamComplete,
       onResponseContent,
+      onImagesUnsupported,
       clearToolActivity,
       beginToolActivity,
       completeToolActivity,
