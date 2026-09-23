@@ -257,7 +257,8 @@ therefore has to be true here, and the skill is the executable layer on top: it 
 at the list below rather than keeping a second copy that can drift. When they disagree, this
 file is right, and the skill is the thing to fix.
 
-The fork is based on `d61e5213`. To take upstream's changes:
+The fork's last merge from upstream was **`fa8fb7ef`** (2026-09-24). To take upstream's
+changes:
 
 ```bash
 git remote add upstream https://github.com/OpenWhispr/openwhispr.git   # once
