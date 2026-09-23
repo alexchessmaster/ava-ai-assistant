@@ -245,13 +245,35 @@ line simply never matches.
 
 ## 3. Merging upstream
 
-The fork is one commit ahead of `d61e5213` plus an uncommitted working set. To take
-upstream's changes:
+**There is a skill for this: `.claude/skills/merge-upstream/SKILL.md`** — run
+`/merge-upstream`. It covers the preconditions, the conflict forecast, how to resolve each
+class of conflict, what to check beyond the gate below, and the reporting format. Read it
+rather than reconstructing the procedure.
+
+**This section stays the authority, and the two must not be merged into one.** `.claude/` is
+gitignored — by _upstream_, whose rule it is (`6ae83bbe`, before this fork's base) — so the
+skill does not survive a clone, while this file does. Everything needed to perform a merge
+therefore has to be true here, and the skill is the executable layer on top: it points back
+at the list below rather than keeping a second copy that can drift. When they disagree, this
+file is right, and the skill is the thing to fix.
+
+The fork is based on `d61e5213`. To take upstream's changes:
 
 ```bash
 git remote add upstream https://github.com/OpenWhispr/openwhispr.git   # once
 git fetch upstream
-git rebase upstream/main
+git merge upstream/main      # default; or `git rebase upstream/main` for linear history
+```
+
+**Merge, not rebase, unless you have a reason.** The fork is published at
+`github.com/alexchessmaster/eva-ai-assistant` with all its commits pushed, so a rebase
+rewrites published history and needs a force-push, and it re-hashes the fork's commits for
+anyone who has cloned. A merge keeps them stable.
+
+Before starting, ask git what would actually conflict, without touching the working tree:
+
+```bash
+git merge-tree --write-tree HEAD upstream/main >/dev/null; echo $?   # non-zero = conflicts
 ```
 
 Then, in order:
@@ -277,8 +299,11 @@ Then, in order:
 | `src/components/ControlPanel.tsx`              | The fork adds one lazy import and one render branch among many.                                    |
 | `test/components/fieldDirectionPolicy.test.js` | The review record for every `Input`/`Textarea` in the app. Any new field must add a line here.     |
 
-Nothing in the fork modifies `src/locales/**` or `src/config/prompts*`, so those merge
-cleanly — that is deliberate (§4).
+Nothing in the fork modifies `src/locales/**`, so those merge cleanly — that is deliberate
+(§4). **`src/config/prompts.ts` is the one exception**, and this line used to claim
+otherwise: the fork owns the `run_command` entry in `TOOL_INSTRUCTIONS` and has rewritten
+it twice, so expect a conflict there whenever upstream touches that file. Keep upstream's
+other entries verbatim and re-apply the fork's `run_command` on top.
 
 ## 4. Constraints that will bite a future change
 
@@ -383,6 +408,25 @@ files away from the prompt. When a tool is not being used, check what the model 
 _told_, not only what it was told to do. (The literal refusal string was never reproduced
 here even with the names absent, so treat the mechanism as established and the exact
 wording as unconfirmed.)
+
+**The dictation-agent route has no tools, so its prompt must say so.** `audioManager.js` and
+`dictationAgentInference.js` build no tool registry — commands are wired only into the chat
+streaming path (`useChatStreaming` → `createToolRegistry`), which is what the Voice Assistant
+_panel_ uses. The DictationAgent prompt therefore governs a path that cannot save a note,
+send a message or create a calendar entry, and a prompt that only says "reply with the result
+only, no questions" will **fabricate success**: measured on `gemma4:e4b`, "open my calendar
+and put this in for tomorrow at nine: standup" answered _"Standup added to your calendar for
+tomorrow at 9:00 AM."_ The fix is one explicit rule telling it to say what it cannot do
+instead of inventing a result — that is rule 5 of the prompt in README §5, and it works: all
+four phrasings switch from a fabricated success to a plain "I cannot…". Do not remove it, and
+re-check it if tools are ever wired into this route.
+
+**The panel's prompt and its model come from different scopes.** `AssistantPanel.tsx` passes
+`inferenceScope: "dictationAgent"` (so the _model_ is the Voice Assistant one), while its
+_system prompt_ is `getAgentSystemPrompt()` → `resolvePrompt("chatAgent")`. That is upstream's
+shape, not the fork's, and it is surprising enough to be worth knowing before debugging "the
+Voice Assistant prompt does nothing" — for the panel it genuinely does not, because that
+field is not the one being read.
 
 **The pre-flight is a `which` lookup, and deliberately not on Windows.** `where` cannot see
 what `cmd.exe` resolves through App Paths, ShellExecute, or its own builtins, so a Windows

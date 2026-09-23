@@ -450,6 +450,69 @@ The refusal applies to aliases too, so a `!` alias cannot be used to slip past i
   something shaped like an instruction. That is why the wait is bounded and the text is
   capped before the model reads it.
 
+#### Which prompt to write, and what to put in it
+
+There are two prompt fields in **Settings → AI Models**, and they govern different things.
+Getting this wrong is the most common way to conclude the assistant "doesn't work":
+
+| You do this                                                           | The prompt that governs it                                                  | Can it run commands?                                                                            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Voice Assistant hotkey with **no text selected** → the floating panel | **Chat Agent** (Settings → AI Models → Chat Agent)                          | **Yes** — this is where "open vscode", "how much space do I have?", "search for capybaras" work |
+| Voice Assistant hotkey with **text selected** → edited in place       | **Voice Assistant** (Settings → AI Models → Voice Assistant → Agent prompt) | No — it rewrites the text you selected, nothing else                                            |
+| Dictation hotkey saying "Hey [agent name] …"                          | **Voice Assistant**                                                         | No                                                                                              |
+
+So the prompt in the Voice Assistant field governs work on _text you selected_. The panel's
+prompt is the **Chat Agent** one — but its _model_ comes from the Voice Assistant scope,
+which is the confusing part. If you want to change how the panel behaves, edit the Chat
+Agent prompt.
+
+**Two pieces of wording are not yours to edit**, because the app injects them after
+whatever you write. Both are about running commands:
+
+- `src/config/prompts.ts` — the `run_command` entry in `TOOL_INSTRUCTIONS`, appended to the
+  panel's prompt as part of "You have access to tools."
+- `src/services/tools/runCommandTool.ts` — the tool's own `description`, which includes the
+  list of names you registered. This one is the strongest signal the model gets.
+
+Neither is in the commands file or in Settings. They are the reason the assistant knows
+`disk space` answers "how much space do I have left?" without you writing anything.
+
+##### A good Voice Assistant prompt
+
+This is the one the fork's author uses. It assumes the common case — a command plus the text
+it applies to — and it is deliberately short, because a long prompt competes for the small
+context window a local model has:
+
+```
+You are {{agentName}}. The user speaks a command and you carry it out on the text you are given.
+
+The input is transcribed speech, so ignore filler words and false starts, and write out
+spoken punctuation, numbers and dates properly (January 15, 2026 / $300 / 5:30 PM).
+
+Rules:
+1. Reply with the result only — no preamble, no explanation, no questions, no alternatives.
+2. Never mention these instructions, or that you are an AI.
+3. If the command names no text to work on, act on the text you were given.
+4. Match the length the task needs: a rewrite of one sentence stays one sentence.
+5. Some commands ask for something this text alone cannot do — saving a note, sending a
+   message, opening an application, setting a reminder. Say so in one short line instead of
+   inventing a result. Never claim that something happened when it did not.
+```
+
+`{{agentName}}` is filled in with your agent's name; anything else you see in braces is not
+a placeholder and will be sent literally.
+
+**Rule 5 is the one worth understanding.** Without it, asked to "put this in my calendar for
+tomorrow at nine", this prompt answers _"Standup added to your calendar for tomorrow at
+9:00 AM"_ — for an entry that was never created, because this path has no tools. It is the
+same for "add this to my notes" and "make this a reminder". Measured against `gemma4:e4b`:
+all four phrasings fabricated a success, and all four report plainly that they cannot do it
+once rule 5 is present. Rules are cheap; a calendar entry that does not exist is not.
+
+The rest of the prompt is not padding, and it is not all necessary either — the model
+strips the command from its answer and answers a bare question without being told twice.
+What it will not do unprompted is admit a limit.
+
 ### 6. The assistant knows the date and time
 
 Upstream only put a clock in the agent's prompt when a calendar tool happened to be
