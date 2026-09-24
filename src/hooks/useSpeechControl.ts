@@ -1,15 +1,5 @@
 import { useSpeechStore } from "../stores/speechStore";
 
-export interface SpeechControlOptions {
-  /**
-   * Read the text exactly as given, without the markdown cleanup that makes a
-   * chat reply listenable. The read-aloud panel sets this: text the user pasted
-   * or selected is not a rendered reply, and the cleanup would drop fenced code
-   * blocks from it entirely.
-   */
-  verbatim?: boolean;
-}
-
 export interface SpeechControl {
   /** This particular text is the one being read. */
   speaking: boolean;
@@ -27,20 +17,18 @@ export interface SpeechControl {
 }
 
 /**
- * Wires one read-aloud button to the shared speech store: the labels, the code
- * placeholder the engine should say instead of reading a code block, and the
- * play/stop toggle. Both the chat messages and the assistant panel's footer use
- * this, so the wording lives in one place.
+ * Wires one read-aloud button to the shared speech store: the labels and the
+ * play/stop toggle. Chat messages, the assistant panel's footer and the
+ * read-aloud panel all use this, so the wording lives in one place — and they
+ * all hand the store the same text unchanged, since what to do with a code
+ * block is decided in `speechText.ts` rather than by the caller.
  *
  * The strings are plain English rather than i18n keys on purpose: this project
  * checks that every `t()` key resolves in `en`, and every `en` key exists in 11
  * other locales, so translating two new buttons would touch thirteen upstream
  * files. Add the keys here when the fork wants translations.
  */
-export function useSpeechControl(
-  text: string,
-  options: SpeechControlOptions = {}
-): SpeechControl {
+export function useSpeechControl(text: string): SpeechControl {
   const speakingText = useSpeechStore((state) => state.speakingText);
   const available = useSpeechStore((state) => state.available);
   const paused = useSpeechStore((state) => state.paused);
@@ -49,8 +37,6 @@ export function useSpeechControl(
   const pause = useSpeechStore((state) => state.pause);
   const resume = useSpeechStore((state) => state.resume);
   const stop = useSpeechStore((state) => state.stop);
-
-  const verbatim = options.verbatim === true;
 
   // Comparing the text rather than an id keeps the caller from having to mint
   // one; two identical messages would both light up, which is not worth an id.
@@ -67,8 +53,7 @@ export function useSpeechControl(
         stop();
         return;
       }
-      if (verbatim) speak(text, { verbatim: true });
-      else speak(text, { codePlaceholder: "code block" });
+      speak(text);
     },
     pause,
     resume,

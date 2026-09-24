@@ -127,16 +127,20 @@ export function useReadAloudPanel({ requestMainWindowSize, resizeToContent }) {
     [resizeToContent]
   );
 
-  /** Reads `content` verbatim, replacing whatever was in the box. */
-  const read = useCallback(
-    (content) => {
-      const value = String(content ?? "");
-      setText(value);
-      textRef.current = value;
-      if (value.trim()) useSpeechStore.getState().speak(value, { verbatim: true });
-    },
-    []
-  );
+  /**
+   * Reads `content`, replacing whatever was in the box.
+   *
+   * The text itself is stored exactly as it came — that is what the box shows
+   * and what a second press re-reads — while the engine gets the markdown
+   * stripped out of it, the same way a reply does. A selected note is as full
+   * of `#` and `*` as a reply is.
+   */
+  const read = useCallback((content) => {
+    const value = String(content ?? "");
+    setText(value);
+    textRef.current = value;
+    if (value.trim()) useSpeechStore.getState().speak(value);
+  }, []);
 
   /**
    * The hotkey. While something is being read it pauses, while paused it

@@ -1,13 +1,7 @@
 import { create } from "zustand";
 import { splitForSpeech, toSpeechText } from "../utils/speechText";
 import { readSpeechSpeed } from "../utils/speechSpeed";
-import {
-  initKokoro,
-  pauseKokoro,
-  resumeKokoro,
-  startKokoro,
-  stopKokoro,
-} from "./kokoroSpeech";
+import { initKokoro, pauseKokoro, resumeKokoro, startKokoro, stopKokoro } from "./kokoroSpeech";
 
 /**
  * The one thing that speaks.
@@ -44,7 +38,7 @@ interface SpeechState {
    * than offer a pause that silently does nothing.
    */
   pausable: boolean;
-  speak: (text: string, options?: { codePlaceholder?: string; verbatim?: boolean }) => void;
+  speak: (text: string, options?: { codePlaceholder?: string }) => void;
   pause: () => void;
   resume: () => void;
   stop: () => void;
@@ -56,6 +50,46 @@ interface SpeechState {
  */
 type SpeechBackend = "kokoro" | "web" | "system" | null;
 let activeBackend: SpeechBackend = null;
+
+/**
+ * How long a reading may go without advancing before it is treated as stuck.
+ *
+ * Measured from the last *progress*, never from the start: reading a long
+ * document aloud for twenty minutes is this feature working, and a wall-clock
+ * cap would cut it off mid-sentence — a guard rail that fires on legitimate use
+ * is just another bug. What it is for is the other shape, a reading that stops
+ * advancing: on the system backend that is a child process nobody is waiting on,
+ * and on the others a "playing" state that never clears and an audio pipeline
+ * held open for the rest of the session.
+ *
+ * The system backend is deliberately not covered here — it has no progress to
+ * report, only its own completion, so the per-child deadline in `systemSpeech.js`
+ * is what bounds it. That one is proportional to the utterance instead of flat,
+ * which is the only honest way to bound something that legitimately runs for
+ * minutes.
+ */
+const STALL_TIMEOUT_MS = 10 * 60 * 1000;
+
+let stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Rearms the watchdog; call whenever the reading advances. */
+function noteProgress() {
+  if (stallTimer) clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    stallTimer = null;
+    // Nothing has advanced in ten minutes, so nothing is coming: kill whatever
+    // the backend is holding and let the button fall back to "Read aloud".
+    useSpeechStore.getState().stop();
+    useSpeechStore.setState({ speakingText: null, paused: false });
+    console.warn("[speech] reading stalled with no progress; stopped it");
+  }, STALL_TIMEOUT_MS);
+}
+
+/** Stops the watchdog — the reading ended, was stopped, or was paused. */
+function clearStallWatchdog() {
+  if (stallTimer) clearTimeout(stallTimer);
+  stallTimer = null;
+}
 
 function synth(): SpeechSynthesis | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
@@ -75,13 +109,11 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
   pausable: false,
 
   speak: (text, options) => {
-    // `verbatim` is for text the user chose to read — pasted or selected
-    // prose is not a markdown reply, so the cleanup that makes a reply
-    // listenable (and that drops fenced code blocks entirely) would silently
-    // change it. Chunking below still applies either way.
-    const spoken = options?.verbatim
-      ? text
-      : toSpeechText(text, { codePlaceholder: options?.codePlaceholder });
+    // Every caller gets the same pass — a note the user selected is as full of
+    // markdown as a reply is, and reads just as badly without the cleanup — and
+    // what happens to a code block is decided by the text, not by who asked:
+    // see `SOLO_FENCE`. Chunking below applies either way.
+    const spoken = toSpeechText(text, { codePlaceholder: options?.codePlaceholder });
     if (!spoken) return;
     // Only one reply is ever read; starting another cancels the one playing.
     get().stop();
@@ -94,11 +126,16 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     // unusable, so the retry lands on the platform voices instead of looping.
     if (
       startKokoro(spoken, {
+        // Each chunk that plays is progress; the watchdog is what notices when
+        // they stop coming.
+        onProgress: noteProgress,
         onDone: () => {
+          clearStallWatchdog();
           activeBackend = null;
           if (get().speakingText === text) set({ speakingText: null, paused: false });
         },
         onFallback: () => {
+          clearStallWatchdog();
           activeBackend = null;
           if (get().speakingText === text) set({ speakingText: null, paused: false });
           get().speak(text, options);
@@ -107,6 +144,7 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     ) {
       activeBackend = "kokoro";
       set({ speakingText: text, paused: false, pausable: true });
+      noteProgress();
       return;
     }
 
@@ -121,16 +159,25 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk);
         utterance.rate = readSpeechSpeed();
-        if (index === chunks.length - 1) {
-          // Cancelling fires neither handler, so stop() clears the state itself.
-          const finish = () => {
+        // Every chunk is progress, and only the last one is also the end:
+        // without the first half of that, a queue that stalls half way through
+        // reads as a reading that is still going.
+        utterance.onend = () => {
+          if (index === chunks.length - 1) {
+            // Cancelling fires neither handler, so stop() clears the state itself.
+            clearStallWatchdog();
             if (get().speakingText === text) set({ speakingText: null });
-          };
-          utterance.onend = finish;
-          utterance.onerror = finish;
-        }
+            return;
+          }
+          noteProgress();
+        };
+        utterance.onerror = () => {
+          clearStallWatchdog();
+          if (get().speakingText === text) set({ speakingText: null });
+        };
         engine.speak(utterance);
       });
+      noteProgress();
       return;
     }
 
@@ -162,11 +209,17 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     if (activeBackend === "kokoro") {
       // False means nothing was actually playing — between chunks, say — so
       // there is no position to hold and the state must not claim otherwise.
-      if (pauseKokoro()) set({ paused: true });
+      if (pauseKokoro()) {
+        // A paused reading is not a stalled one, and pause tears the pipeline
+        // down, so nothing is running to keep an eye on.
+        clearStallWatchdog();
+        set({ paused: true });
+      }
       return;
     }
     if (activeBackend === "web") {
       synth()?.pause();
+      clearStallWatchdog();
       set({ paused: true });
     }
     // The system backend has nothing to pause with, and `pausable` is false
@@ -179,16 +232,21 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     if (activeBackend === "kokoro") {
       // A resume that cannot start leaves the passage paused rather than
       // silently clearing the state.
-      if (resumeKokoro()) set({ paused: false });
+      if (resumeKokoro()) {
+        set({ paused: false });
+        noteProgress();
+      }
       return;
     }
     if (activeBackend === "web") {
       synth()?.resume();
       set({ paused: false });
+      noteProgress();
     }
   },
 
   stop: () => {
+    clearStallWatchdog();
     synth()?.cancel();
     void bridge()?.systemSpeechStop?.();
     stopKokoro();

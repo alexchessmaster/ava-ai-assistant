@@ -59,10 +59,9 @@ export function ReadAloudPanel({
   collapsed,
   onToggleCollapsed,
 }: ReadAloudPanelProps) {
-  // Verbatim: this is text the user chose to read, not a markdown reply, so the
-  // reply cleanup — which drops fenced code blocks outright — would silently
-  // change it.
-  const speech = useSpeechControl(text, { verbatim: true });
+  // The same cleanup a chat reply gets, so a heading or a bullet list in a
+  // pasted note is not read as "hash hash hash".
+  const speech = useSpeechControl(text);
   const [speed, setSpeed] = useState(() => readSpeechSpeed());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 

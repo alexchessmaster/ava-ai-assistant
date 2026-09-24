@@ -64,8 +64,32 @@ the dictation it rode in with.
 A speaker button on the assistant panel's reply and on **every** chat message, including
 the user's own.
 
-- `src/utils/speechText.ts` _(new)_ — markdown to speech (code blocks are announced, not
-  read), plus sentence chunking.
+- `src/utils/speechText.ts` _(new)_ — markdown to speech, plus sentence chunking. **One pass,
+  no per-caller mode**: a chat reply, a Voice Assistant answer and a note read from the
+  read-aloud panel all go through it identically. Headings, list markers, emphasis, tables,
+  links, URLs, emoji and the symbol blocks an engine reads as glyph names are all stripped,
+  because a pasted note is as full of markdown as a reply is.
+  - **What happens to a code block is decided by the text, not by who asked** (`SOLO_FENCE`).
+    A passage that is nothing but one fenced block is read verbatim — there is no prose for
+    it to be an aside to, so it is the thing that was asked for. Anything else announces
+    `Code omitted here.` in its place: a listener has to know something was skipped, and a
+    bare "code block" never told them where to find it. A run of consecutive blocks is
+    announced once, not once per block. An earlier `keepCode` flag existed to make the
+    read-aloud panel read code and the reply buttons announce it; it is gone, because that
+    distinction is the text's, not the button's.
+  - Inline code is always read: it is a word or two inside a sentence, so dropping it would
+    leave a hole.
+  - Code is masked out with private-use sentinels (U+E000/U+E001) before any rule runs, and
+    put back after. It has to be hidden from the rules, not merely exempted from them: a
+    lone `*` in `a * b` and the `_` in `snake_case` are the snippet's characters, and the
+    emphasis pass would eat them.
+  - A line break is a sentence break only where markdown says the block ended — a blank
+    line, or a line opening with a marker. A hard-wrapped sentence is a wrap and must not
+    grow a full stop. This is what stops `# Title` / `- one` / `- two` being read as one
+    breath, which is the reported bug this pass exists to fix.
+  - **Write non-ASCII here as `\u{XXXX}`, never `\uXXXX`.** Some editing tools decode the
+    four-digit form into the literal character on the way in, which silently puts real
+    U+2028/U+2029 line separators into the file and breaks the parse.
 - `src/stores/speechStore.ts` _(new)_ — the shared engine. **Two backends, and the choice
   is not a preference** (see §4).
 - `src/hooks/useSpeechControl.ts` _(new)_ — per-button wiring and labels.
@@ -85,8 +109,9 @@ nothing changes nothing. All new files:
 - `src/components/settings/KokoroSettings.tsx` — the Settings block.
 
 Upstream files touched, kept deliberately tiny: `main.js` (one `require` + `register()`),
-`preload.js` (eight methods), `speechStore.ts` (three insertions), `SettingsPage.tsx` (one
-import, one mount). See §4 for the constraints that shaped this.
+`preload.js` (eight methods), `SettingsPage.tsx` (one import, one mount). Everything else
+here — `speechStore.ts`, `useSpeechControl.ts`, the read-aloud panel and its hook — is new
+in this fork. See §4 for the constraints that shaped this.
 
 ### 2d. Voice Assistant composer fix on Linux
 
@@ -254,6 +279,13 @@ box hidden, Play/Pause + Stop + speed still on screen), and minimised back to th
 collapsing nor minimising stops the audio — that is the point of both, since a passage you can't
 put the window away from is not one you'd choose to listen to.
 
+**What the engine hears is not what the box shows.** The box holds the text exactly as it was
+selected or pasted — that is what a second press re-reads — while the engine is handed the same
+markdown-stripped pass a chat reply gets. Selected text is markdown like any other: without
+this, a note's `###` is read as "hash hash hash" and a list item's `**` as "asterisk asterisk".
+Selecting a lone snippet still reads it, because that rule follows the text rather than the
+button — see `SOLO_FENCE` in §2c.
+
 New files:
 
 - `src/utils/speechSpeed.ts` — the speed: clamped, snapped to its step, persisted in
@@ -267,15 +299,16 @@ Upstream files touched, kept deliberately tiny: `hotkeyManager.js` (the `readAlo
 `gnomeShortcut.js` / `hyprlandShortcut.js` (its native bindings), `environment.js` (the key),
 `main.js` (one callback and its registration), `ipcHandlers.js` (`update`/`get` handlers plus
 `set-read-aloud-panel-open`), `preload.js`, `electron.ts`, `settingsStore.ts`, `SettingsPage.tsx`
-(one row, plain English), `speechStore.ts` and `kokoroSpeech.ts` (pause, resume, speed),
-`systemSpeech.js` (`-r`), `windowManager.js` (`setReadAloudPanelOpen`, and `_applyPanelFocus`
-extracted so both panels share the focus handover), `useMainWindowSizeOwner.js`,
-`VoiceModePanelCore.tsx`, `App.jsx`, `voicePillPresentation.js`.
+(one row, plain English), `systemSpeech.js` (`-r`), `windowManager.js`
+(`setReadAloudPanelOpen`, and `_applyPanelFocus` extracted so both panels share the focus
+handover), `useMainWindowSizeOwner.js`, `VoiceModePanelCore.tsx`, `App.jsx`,
+`voicePillPresentation.js`. The fork's own `speechStore.ts` and `kokoroSpeech.ts` carry the
+pause/resume/speed plumbing and cost no rebase.
 
 **The selection is read by the renderer, before the panel opens.** The capture is a synthetic
 copy aimed at whatever window is foreground, and this panel becomes focusable the moment it
 mounts — so reading it afterwards would copy out of our own window and always come back empty.
-The main process only starts the target *probe* on the keypress, which the read then finds
+The main process only starts the target _probe_ on the keypress, which the read then finds
 resolved. Read §4 before moving that call.
 
 Reading a selection is best-effort by design: with no `xdotool` on X11, or a helper built without
@@ -378,6 +411,31 @@ the node on resume — pause must invalidate the pipeline exactly as `stopKokoro
 synthesis already queued keeps running through the pause. `spd-say` has no pause at all (only
 `-S` and `-C`; check `spd-say --help`), so that backend reports `pausable: false` and the control
 offers Stop rather than a button that would silently do nothing.
+
+**`stop()` must use `spd-say -C`, because `-S` never returns.** Measured on speech-dispatcher
+0.12.0-rc2 against a healthy daemon (`--list-output-modules` answering normally): `timeout 5
+spd-say -S` is killed at the deadline, spinning at ~100% CPU, whether or not anything is
+playing. `spd-say -C` in the same conditions exits 0 — and it cancels the message being spoken
+as well, so it is not the weaker verb it looks like. This is not a footnote, because `speak()`
+calls `stop()` _before_ every utterance: one press of a speaker button was enough to leave a
+process pinning a core, and twelve had accumulated before anyone noticed, outliving the app that
+spawned them. Every child `systemSpeech.js` spawns now carries a deadline (five seconds for a
+stop, the length of the utterance with a wide margin for speech) — the CLI's exit behaviour is
+not ours to trust, and a hang here is silent. `test/helpers/systemSpeech.test.js` pins the verb
+and the deadlines; it asserts the process hygiene, not the audio.
+
+**The stall watchdog is measured from progress, never from the start.** `speechStore.ts` arms a
+ten-minute timer when a reading begins, and every chunk that reaches the speakers rearms it; if
+it ever expires, the reading is stopped, the state cleared, and a warning logged. That
+distinction is the whole design: reading a long document aloud for half an hour is the feature
+working, so a wall-clock cap at ten minutes would cut a legitimate passage off mid-sentence — a
+guard rail that fires on ordinary use is just another bug. The system backend is deliberately
+outside it: it reports no progress at all until its one child exits, so covering it here would
+mean killing long readings on Linux, and the per-child deadline above already bounds it
+proportionally. Pause and stop both disarm the watchdog (a paused reader is not a stuck one, and
+the pause tears the Kokoro pipeline down anyway); `test/stores/speechStallWatchdog.test.js`
+drives the real store on mock timers and pins exactly that — including that a passage still
+reading after eighteen minutes is left alone.
 
 **Do not add i18n keys for the fork's strings.** `test/locales/translationCoverage.test.js`
 requires every literal `t()` key to resolve in `en`, and `scripts/check-i18n.js` requires
@@ -533,7 +591,7 @@ it, and both probes are cheap to reproduce. Prefer this to guessing:
 
 - **Kokoro playback speed** — that `--speed` reaches the Kokoro path at all, and that it changes
   tempo rather than pitch. Synthesise one sentence at 1.0 / 1.2 / 1.5 and compare the WAV
-  durations *and* the zero-crossing rate. Duration alone cannot tell the two apart: a resample
+  durations _and_ the zero-crossing rate. Duration alone cannot tell the two apart: a resample
   shortens the file and raises the pitch together, which is exactly the failure being ruled out.
 
 The first two need a display; note the `DISPLAY` variable is set on a normal desktop session.

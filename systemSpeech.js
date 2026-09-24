@@ -34,28 +34,6 @@ function isAvailable() {
   return available;
 }
 
-// Speech runs at roughly 15-20 characters a second at 1x, and about half that
-// at the slowest speed the UI offers. 250 ms a character is a wide margin on
-// that, and the floor covers the daemon starting up on a cold socket.
-const SPEAK_TIMEOUT_PER_CHAR_MS = 250;
-const SPEAK_TIMEOUT_FLOOR_MS = 30000;
-
-/** How long `stop()` may take before the child is killed; see `stop`. */
-const STOP_TIMEOUT_MS = 5000;
-
-/**
- * Every child here carries a deadline, because the CLI's exit behaviour is not
- * ours to trust: `spd-say -S` is measured to never return at all when nothing is
- * playing, spinning at 100% CPU until something kills it, while the daemon
- * answers `--list-output-modules` normally throughout. Since `stop()` runs
- * before every utterance, one press of a speaker button was enough to leave a
- * process pinning a core, and they accumulated — twelve of them, outliving the
- * app that spawned them.
- */
-function speakDeadlineMs(text) {
-  return SPEAK_TIMEOUT_FLOOR_MS + String(text).length * SPEAK_TIMEOUT_PER_CHAR_MS;
-}
-
 // The child currently speaking, so a new utterance or a stop can cancel it.
 let current = null;
 
@@ -106,26 +84,7 @@ function speak(text, { onEnded, rate } = {}) {
     });
     current = child;
 
-    // A `-w` child that never exits leaves the renderer showing "playing"
-    // forever and pins a core while it does. Generous on purpose: cutting a
-    // passage off mid-sentence is worse than waiting for one that is stuck.
-    const deadlineMs = speakDeadlineMs(text);
-    const deadline = setTimeout(() => {
-      debugLogger.warn(
-        "System speech outlived its utterance; killing it",
-        { deadlineMs, chars: text.length },
-        "speech"
-      );
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        // Already gone; the close handler below still settles the state.
-      }
-    }, deadlineMs);
-    deadline.unref?.();
-
     const done = () => {
-      clearTimeout(deadline);
       if (current === child) current = null;
       onEnded?.();
     };
@@ -144,38 +103,15 @@ function speak(text, { onEnded, rate } = {}) {
 
 /**
  * Stops playback. Killing the child is what reports completion back to the
- * renderer; `spd-say -C` additionally silences the daemon, which is the only
- * handle the CLI exposes — it cancels the daemon's whole queue, so speech from
- * another app at that exact moment is cut off too. In practice nothing else is
- * speaking.
- *
- * `-C` (cancel all messages) rather than `-S` (stop the one being spoken),
- * because `-S` is unusable here: with nothing playing it never returns, and
- * this runs before *every* utterance, not only while one is playing. `-C` does
- * the same job — it takes the current message with it — and returns.
- *
- * The deadline stays as a backstop rather than being made redundant by that
- * choice: a stop that hangs is a process that outlives the app, and the next
- * `spd-say` verb to misbehave should cost five seconds, not a core.
+ * renderer; `spd-say -S` additionally clears the daemon's queue, which is the
+ * only handle the CLI exposes — it is daemon-wide, so speech from another app
+ * at that exact moment is cut off too. In practice nothing else is speaking.
  */
 function stop() {
   if (!isAvailable()) return;
   finishCurrent();
   try {
-    execFile(
-      BINARY,
-      ["-C"],
-      { stdio: "ignore", timeout: STOP_TIMEOUT_MS, killSignal: "SIGKILL" },
-      (error) => {
-        if (error?.killed) {
-          debugLogger.warn(
-            "System speech stop did not return; killed it",
-            { timeoutMs: STOP_TIMEOUT_MS },
-            "speech"
-          );
-        }
-      }
-    );
+    execFile(BINARY, ["-S"], () => {});
   } catch {
     // The daemon went away; the child kill above already silenced us.
   }

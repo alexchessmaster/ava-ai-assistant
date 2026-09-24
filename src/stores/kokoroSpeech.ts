@@ -302,6 +302,12 @@ async function playBuffer(
 
 interface StartOptions {
   /**
+   * Called as each chunk reaches the speakers, so the caller can tell a reading
+   * that is getting on with it from one that has quietly stopped. Without it a
+   * pipeline that dies mid-passage looks exactly like one that is still going.
+   */
+  onProgress?: () => void;
+  /**
    * Called when the pipeline finished normally or was stopped. The caller uses
    * it to clear the button's state.
    */
@@ -377,6 +383,10 @@ function runPipeline(
       }
 
       heard = true;
+      // Before the chunk plays, not after: a chunk that never finishes playing
+      // is exactly the stall the caller is watching for, and reporting progress
+      // once the audio was already over would hide it for one build time.
+      options.onProgress?.();
       await playBuffer(result.audio, current, descriptor, index === startIndex ? startOffset : 0);
     }
 
