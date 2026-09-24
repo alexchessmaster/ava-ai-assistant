@@ -15,7 +15,7 @@ Read `CLAUDE.md` for the app. Read this for the diff.
 
 Nearly everything here is upstream's code, unchanged: dictation, meeting transcription and
 diarization, notes, calendar sync, semantic search, the model/provider plumbing. The fork's
-own work is four features, listed below.
+own work is §2 below — a handful of features, one platform fix, and some housekeeping.
 
 The internal identifiers (package name, app id, install directory, in-app product strings)
 still say OpenWhispr. Do not "fix" that as a drive-by: changing the app id moves where user
@@ -243,6 +243,46 @@ line simply never matches.
 - `package-lock.json` — 434 lines, entirely `pdfjs-dist` and its optional
   `@napi-rs/canvas`. This is the single worst file to merge; see §5.
 
+### 2h. Read a selection or pasted text aloud
+
+A hotkey (Settings → Hotkeys → **Read aloud hotkey**, unset by default) that reads either the
+text highlighted in another app, or text pasted into a panel it opens. Pause and playback speed
+both work, and the speed persists across restarts.
+
+Three tiers, one button each in the header: the full panel, a collapsed **control strip** (text
+box hidden, Play/Pause + Stop + speed still on screen), and minimised back to the pill. Neither
+collapsing nor minimising stops the audio — that is the point of both, since a passage you can't
+put the window away from is not one you'd choose to listen to.
+
+New files:
+
+- `src/utils/speechSpeed.ts` — the speed: clamped, snapped to its step, persisted in
+  localStorage. Read at speak time, so a change lands on the next chunk rather than needing a
+  restart.
+- `src/hooks/useReadAloudPanel.js` — panel lifecycle, the collapsed/minimised states, and the
+  hotkey's play/pause/resume toggle.
+- `src/components/readAloud/ReadAloudPanel.tsx` — the panel itself.
+
+Upstream files touched, kept deliberately tiny: `hotkeyManager.js` (the `readAloud` slot),
+`gnomeShortcut.js` / `hyprlandShortcut.js` (its native bindings), `environment.js` (the key),
+`main.js` (one callback and its registration), `ipcHandlers.js` (`update`/`get` handlers plus
+`set-read-aloud-panel-open`), `preload.js`, `electron.ts`, `settingsStore.ts`, `SettingsPage.tsx`
+(one row, plain English), `speechStore.ts` and `kokoroSpeech.ts` (pause, resume, speed),
+`systemSpeech.js` (`-r`), `windowManager.js` (`setReadAloudPanelOpen`, and `_applyPanelFocus`
+extracted so both panels share the focus handover), `useMainWindowSizeOwner.js`,
+`VoiceModePanelCore.tsx`, `App.jsx`, `voicePillPresentation.js`.
+
+**The selection is read by the renderer, before the panel opens.** The capture is a synthetic
+copy aimed at whatever window is foreground, and this panel becomes focusable the moment it
+mounts — so reading it afterwards would copy out of our own window and always come back empty.
+The main process only starts the target *probe* on the keypress, which the read then finds
+resolved. Read §4 before moving that call.
+
+Reading a selection is best-effort by design: with no `xdotool` on X11, or a helper built without
+AT-SPI, the box simply opens empty for pasting. The README's per-platform notes cover what each
+platform needs; the failure is silent, so a bug report about "nothing was selected" is worth
+checking against the helper's `--capabilities` output before anything else.
+
 ## 3. Merging upstream
 
 **There is a skill for this: `.claude/skills/merge-upstream/SKILL.md`** — run
@@ -307,6 +347,27 @@ it twice, so expect a conflict there whenever upstream touches that file. Keep u
 other entries verbatim and re-apply the fork's `run_command` on top.
 
 ## 4. Constraints that will bite a future change
+
+**Every panel that owns the overlay must be listed in `anyPanelMounted` (`App.jsx`).** This is
+not a cosmetic "is something open" flag: on Linux it reaches `useLinuxPillInteractivity` as
+`captureWindow`, and while that is false the native input region is shaped to the pill's
+rectangle on a 50 ms sampler — every click outside the pill passes straight through to the window
+underneath. A panel nobody registered therefore renders perfectly and cannot be clicked, typed
+into, or focused, and the symptom reads like a focus bug rather than a missing registration. The
+read-aloud panel shipped without it and behaved exactly that way.
+
+**Playback speed is applied by the synthesiser, never by Web Audio.** `playbackRate` on a decoded
+buffer resamples it, which moves the pitch — 1.2x turns Kokoro into a chipmunk. The engine's own
+`--speed` scales durations instead and leaves the voice alone. Measured on the bundled model:
+2.51 s → 2.14 s at 1.2x with the zero-crossing rate essentially unchanged (4252/s → 4119/s, where
+a resample would have scaled it to ~5100/s). Reproduce it the §6 way before changing this.
+
+**Pause is reconstructed, not delegated.** Web Audio offers no way to pause a buffer source, so
+`kokoroSpeech.ts` records the chunk index and the elapsed offset from the audio clock and rebuilds
+the node on resume — pause must invalidate the pipeline exactly as `stopKokoro()` does, or
+synthesis already queued keeps running through the pause. `spd-say` has no pause at all (only
+`-S` and `-C`; check `spd-say --help`), so that backend reports `pausable: false` and the control
+offers Stop rather than a button that would silently do nothing.
 
 **Do not add i18n keys for the fork's strings.** `test/locales/translationCoverage.test.js`
 requires every literal `t()` key to resolve in `en`, and `scripts/check-i18n.js` requires
@@ -460,4 +521,9 @@ it, and both probes are cheap to reproduce. Prefer this to guessing:
   `speechSynthesis.getVoices().length` inside the renderer, and checking `ldd` on the
   Electron binary for a linked speech library.
 
-Both need a display; note the `DISPLAY` variable is set on a normal desktop session.
+- **Kokoro playback speed** — that `--speed` reaches the Kokoro path at all, and that it changes
+  tempo rather than pitch. Synthesise one sentence at 1.0 / 1.2 / 1.5 and compare the WAV
+  durations *and* the zero-crossing rate. Duration alone cannot tell the two apart: a resample
+  shortens the file and raises the pitch together, which is exactly the failure being ruled out.
+
+The first two need a display; note the `DISPLAY` variable is set on a normal desktop session.
