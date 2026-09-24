@@ -73,11 +73,23 @@ export function waitForRendererWindowBounds(bounds: MainWindowBounds): Promise<v
     const startedAt = performance.now();
     let stableFrames = 0;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = () => {
       if (frame) window.cancelAnimationFrame(frame);
+      clearTimeout(timer);
       resolve();
     };
+
+    // The deadline below is only ever checked from inside an animation frame,
+    // and Chromium stops delivering those while the window is hidden or occluded
+    // — the same hazard `visualFrame.ts` bounds for dictation. Nothing else
+    // settles this promise, and the queue in `createMainWindowResizeCoordinator`
+    // is serial and latest-wins, so a single wait that never resolves parks
+    // every later resize behind it: the panel waiting on one simply never opens,
+    // and the window looks frozen until something repaints. A wall-clock timer
+    // keeps that from being unbounded.
+    timer = setTimeout(finish, SETTLE_TIMEOUT_MS);
 
     const sample = () => {
       const matches =

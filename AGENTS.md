@@ -348,6 +348,16 @@ other entries verbatim and re-apply the fork's `run_command` on top.
 
 ## 4. Constraints that will bite a future change
 
+**A resize queue entry must never be left unsettled.** `createMainWindowResizeCoordinator` is
+serial and latest-wins: `run()` awaits the entry's `waitForBounds`, and while that promise is
+pending every later resize parks in the single `queued` slot and is never resolved. The window
+appears frozen — the panel that asked for the resize never opens, and no error is logged
+anywhere. `waitForRendererWindowBounds` used to read its deadline only from inside a
+`requestAnimationFrame` callback, so a window that was hidden or occluded during a resize never
+settled it; pressing a global hotkey from another app is exactly that situation. It now carries a
+wall-clock timer as well. `visualFrame.ts` exists for the same reason on the dictation side —
+anything else that waits on a frame must bound itself the same way.
+
 **Every panel that owns the overlay must be listed in `anyPanelMounted` (`App.jsx`).** This is
 not a cosmetic "is something open" flag: on Linux it reaches `useLinuxPillInteractivity` as
 `captureWindow`, and while that is false the native input region is shaped to the pill's

@@ -174,3 +174,35 @@ test("the next resize waits for renderer geometry settlement", async () => {
     "settle:end",
   ]);
 });
+
+test("a resize still settles when animation frames never arrive", async () => {
+  const { waitForRendererWindowBounds } = await load();
+  const originalWindow = globalThis.window;
+
+  // An occluded or hidden window: requestAnimationFrame exists, but Chromium
+  // stops calling back. The deadline inside the sampler can only be read from
+  // an animation frame, so without a wall-clock timer this promise never
+  // settles — and the resize queue it belongs to is serial, so every later
+  // resize parks behind it and any panel waiting on one never opens.
+  globalThis.window = {
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    screenX: 0,
+    screenY: 0,
+    innerWidth: 0,
+    innerHeight: 0,
+  };
+
+  try {
+    const outcome = await Promise.race([
+      waitForRendererWindowBounds({ x: 0, y: 0, width: 466, height: 300 }).then(
+        () => "settled"
+      ),
+      new Promise((resolve) => setTimeout(() => resolve("still waiting"), 5000)),
+    ]);
+    assert.equal(outcome, "settled");
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
