@@ -98,6 +98,7 @@ class WindowManager {
     this._dictationInputKind = DICTATION_INPUT_KIND.DICTATION;
     this._assistantPanelOpen = false;
     this._assistantPanelBusy = false;
+    this._readAloudPanelOpen = false;
     this._pendingMeetingNoteNavigation = null;
     this._pendingNoteNavigation = null;
 
@@ -176,8 +177,48 @@ class WindowManager {
   _updateMainContentProtection() {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     this.mainWindow.setContentProtection(
-      Boolean(this._screenContextProtection || this._assistantPanelOpen)
+      Boolean(
+        this._screenContextProtection || this._assistantPanelOpen || this._readAloudPanelOpen
+      )
     );
+  }
+
+  /**
+   * The focus half of a panel, shared by both panels that take typed input.
+   *
+   * The window is created `focusable: false` so the pill never steals focus; a
+   * panel has to become focusable to accept keyboard input at all. A panel
+   * closing must not drop focusability while the other one is still open, which
+   * is why this takes the combined state rather than reading one flag.
+   */
+  _applyPanelFocus(shouldFocus) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    if (shouldFocus) {
+      // The window may have been hidden while the command was in flight
+      // (PTT tap, auto-hide, tray); focus() is a no-op on a hidden window.
+      if (!this.mainWindow.isVisible()) this.mainWindow.showInactive();
+      this.mainWindow.setFocusable(true);
+      // macOS: never request app activation for the overlay. focus() calls
+      // NSApp activate, and when another OpenWhispr window (control panel)
+      // lives on a different Space, macOS answers a granted activation by
+      // sliding the whole desktop to it — the "massive flash" on panel
+      // open/close. The window is a non-activating panel, so clicking its
+      // input still makes it key (typing and Escape work from then on)
+      // without activating the app or stealing the user's keyboard.
+      if (process.platform !== "darwin") {
+        this.mainWindow.focus();
+      }
+    } else {
+      // On Windows/Linux the pill is a normal/toolbar window, so focus()
+      // activated OpenWhispr — blur before dropping focusability to hand
+      // the foreground back to the app the user was in. On macOS nothing
+      // was activated, and blur() would only churn key-window state.
+      if (process.platform !== "darwin") {
+        this.mainWindow.blur();
+      }
+      this.mainWindow.setFocusable(false);
+    }
+    this.enforceMainWindowOnTop();
   }
 
   setScreenContextProtection(enabled) {
@@ -187,42 +228,27 @@ class WindowManager {
 
   // The pill window is created focusable:false so it never steals focus; the
   // assistant panel makes it focusable so it can take keyboard input at all.
-  // How it then becomes key is platform-split — see the branches below.
+  // How it then becomes key is platform-split — see `_applyPanelFocus`.
   setAssistantPanelOpen(open) {
     this._assistantPanelOpen = Boolean(open);
     if (!this._assistantPanelOpen) {
       this._assistantPanelBusy = false;
     }
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      if (this._assistantPanelOpen) {
-        // The window may have been hidden while the command was in flight
-        // (PTT tap, auto-hide, tray); focus() is a no-op on a hidden window.
-        if (!this.mainWindow.isVisible()) this.mainWindow.showInactive();
-        this.mainWindow.setFocusable(true);
-        // macOS: never request app activation for the overlay. focus() calls
-        // NSApp activate, and when another OpenWhispr window (control panel)
-        // lives on a different Space, macOS answers a granted activation by
-        // sliding the whole desktop to it — the "massive flash" on panel
-        // open/close. The window is a non-activating panel, so clicking its
-        // input still makes it key (typing and Escape work from then on)
-        // without activating the app or stealing the user's keyboard.
-        if (process.platform !== "darwin") {
-          this.mainWindow.focus();
-        }
-      } else {
-        // On Windows/Linux the pill is a normal/toolbar window, so focus()
-        // activated OpenWhispr — blur before dropping focusability to hand
-        // the foreground back to the app the user was in. On macOS nothing
-        // was activated, and blur() would only churn key-window state.
-        if (process.platform !== "darwin") {
-          this.mainWindow.blur();
-        }
-        this.mainWindow.setFocusable(false);
-      }
-      this.enforceMainWindowOnTop();
-    }
+    this._applyPanelFocus(this._assistantPanelOpen || this._readAloudPanelOpen);
     if (this._assistantPanelOpen) this.showAgentDictationPill();
     else this.hideAgentDictationPill();
+    this._updateMainContentProtection();
+  }
+
+  /**
+   * The read-aloud panel takes typed input, so it needs the same focus handover
+   * the assistant panel does — but it is not a dictation surface, and raising
+   * the floating agent dictation pill beside it would be wrong, so this
+   * deliberately skips that half of `setAssistantPanelOpen`.
+   */
+  setReadAloudPanelOpen(open) {
+    this._readAloudPanelOpen = Boolean(open);
+    this._applyPanelFocus(this._assistantPanelOpen || this._readAloudPanelOpen);
     this._updateMainContentProtection();
   }
 
@@ -1027,6 +1053,21 @@ class WindowManager {
     if (this.hotkeyManager.isInListeningMode() || this._onboardingActive) return;
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     this.mainWindow.webContents.send("open-assistant-panel");
+  }
+
+  /**
+   * Tells the renderer the read-aloud hotkey was pressed. What the press means
+   * — pause, resume, or open the panel and read the selection — is the
+   * renderer's call, because only it knows whether anything is being read.
+   *
+   * The main process just starts the target probe first, so the selection read
+   * the renderer may go on to request finds it already resolved instead of
+   * paying for it then.
+   */
+  sendToggleReadAloud() {
+    void this.selectionManager?.captureTarget?.();
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send("toggle-read-aloud");
   }
 
   sendStartDictation() {

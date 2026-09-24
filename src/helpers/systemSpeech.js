@@ -50,6 +50,20 @@ function finishCurrent() {
 }
 
 /**
+ * `spd-say -r` is a signed percentage away from the daemon's own normal rate,
+ * not a multiplier: 1.2x is `-r 20`, and 1x is no flag at all. Values outside
+ * this range are rejected here rather than handed to the daemon, which accepts
+ * anything in -100..100 silently, however useless it sounds.
+ */
+function buildRateArgs(rate) {
+  const value = Number(rate);
+  if (!Number.isFinite(value) || value === 1) return [];
+  const percent = Math.round((value - 1) * 100);
+  if (percent < -100 || percent > 100) return [];
+  return ["-r", String(percent)];
+}
+
+/**
  * Speaks `text` through speech-dispatcher. `-w` makes the child exit when the
  * utterance finishes, which is the only completion signal the CLI offers — the
  * caller uses it to clear the button's "speaking" state.
@@ -57,14 +71,14 @@ function finishCurrent() {
  * Returns whether the utterance was accepted, so the UI can stay honest if the
  * daemon refuses.
  */
-function speak(text, { onEnded } = {}) {
+function speak(text, { onEnded, rate } = {}) {
   if (!isAvailable() || !text) return false;
 
   // Only one utterance at a time, matching the renderer's own model.
   finishCurrent();
 
   try {
-    const child = spawn(BINARY, ["-w", text], {
+    const child = spawn(BINARY, ["-w", ...buildRateArgs(rate), text], {
       stdio: "ignore",
       detached: process.platform !== "win32",
     });

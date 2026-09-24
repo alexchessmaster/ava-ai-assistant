@@ -91,6 +91,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onToggleVoiceAgent: registerListener("toggle-voice-agent", (callback) => () => callback()),
   onToggleTranslation: registerListener("toggle-translation", (callback) => () => callback()),
   onOpenAssistantPanel: registerListener("open-assistant-panel", (callback) => () => callback()),
+  // No payload: the renderer decides what the press means, and reads the
+  // selection itself before the panel can take focus.
+  onToggleReadAloud: registerListener("toggle-read-aloud", (callback) => () => callback()),
+  setReadAloudPanelOpen: (open) => ipcRenderer.invoke("set-read-aloud-panel-open", open),
   onStartDictation: registerListener("start-dictation", (callback) => () => callback()),
   onStopDictation: registerListener("stop-dictation", (callback) => () => callback()),
   onPrepareDictation: registerListener(
@@ -321,7 +325,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Read-aloud fallback for Linux, where Chromium has no speech voices.
   systemSpeechStatus: () => ipcRenderer.invoke("system-speech-status"),
-  systemSpeechSpeak: (text) => ipcRenderer.invoke("system-speech-speak", text),
+  systemSpeechSpeak: (text, options) => ipcRenderer.invoke("system-speech-speak", text, options),
   systemSpeechStop: () => ipcRenderer.invoke("system-speech-stop"),
   onSystemSpeechEnded: registerListener("system-speech-ended", (callback) => () => callback()),
 
@@ -1111,6 +1115,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Agent mode
   updateVoiceAgentHotkey: (hotkey) => ipcRenderer.invoke("update-voice-agent-hotkey", hotkey),
   getVoiceAgentKey: () => ipcRenderer.invoke("get-voice-agent-key"),
+  updateReadAloudHotkey: (hotkey) => ipcRenderer.invoke("update-read-aloud-hotkey", hotkey),
+  getReadAloudKey: () => ipcRenderer.invoke("get-read-aloud-key"),
   updateTranslationHotkey: (hotkey) => ipcRenderer.invoke("update-translation-hotkey", hotkey),
   getTranslationKey: () => ipcRenderer.invoke("get-translation-key"),
   onPreviewText: registerListener("preview-text", (callback) => (_event, text) => callback(text)),

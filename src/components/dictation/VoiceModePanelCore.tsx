@@ -5,7 +5,7 @@ import {
 } from "../../helpers/voicePillPresentation";
 import { ExpandingPanelShell } from "./ExpandingPanelShell";
 
-export type VoiceModePanel = "assistant" | "live-transcript";
+export type VoiceModePanel = "assistant" | "live-transcript" | "read-aloud";
 export type VoiceModePanelStage = "encapsulated" | "footer" | "content";
 
 interface VoiceModePanelCoreProps {
@@ -16,6 +16,12 @@ interface VoiceModePanelCoreProps {
   horizontalDirection?: "left" | "right";
   label?: string;
   measurementRevision?: string | number | null;
+  /**
+   * Size the surface to its content instead of filling the window, so a panel
+   * that can shrink can actually shrink. Off by default; only the read-aloud
+   * panel asks for it, and only while collapsed.
+   */
+  contentMeasured?: boolean;
   onClosingFadeComplete?: () => void;
   onPreferredHeightChange: (
     height: number,
@@ -37,11 +43,17 @@ export function VoiceModePanelCore({
   horizontalDirection = "right",
   label,
   measurementRevision = null,
+  contentMeasured = false,
   onClosingFadeComplete,
   onPreferredHeightChange,
   children,
 }: VoiceModePanelCoreProps) {
   const isLiveTranscript = mode === "live-transcript";
+  // The read-aloud panel joins the measurement path only while collapsed — a
+  // collapsed panel is a control strip whose height is whatever its buttons
+  // need, and the standing ASSISTANT box would leave it swimming in transparent
+  // window. Expanded, it goes back to filling the box like the assistant panel.
+  const measured = isLiveTranscript || contentMeasured;
   // Keep one origin for the complete lifecycle. Swapping transform origins
   // once content appears makes the closing motion disagree with the entrance.
   const anchor = horizontalDirection === "left" ? "bottom-left" : "bottom-right";
@@ -83,11 +95,15 @@ export function VoiceModePanelCore({
       anchor={anchor}
       className={isLiveTranscript ? "live-transcript-panel" : undefined}
       stabilizeHeight={isLiveTranscript && open}
-      fillAvailableHeight={mode === "assistant"}
-      preferredHeightCap={isLiveTranscript ? LIVE_TRANSCRIPT_SURFACE_LIMITS.maxHeight : undefined}
+      // A full-height panel fills the window it was sized to; a measured one
+      // shrinks to what it actually contains.
+      fillAvailableHeight={
+        mode === "assistant" || (mode === "read-aloud" && !contentMeasured)
+      }
+      preferredHeightCap={measured ? LIVE_TRANSCRIPT_SURFACE_LIMITS.maxHeight : undefined}
       measurementKey={mode}
-      measurementRevision={isLiveTranscript ? measurementRevision : null}
-      onPreferredHeightChange={isLiveTranscript ? onPreferredHeightChange : undefined}
+      measurementRevision={measured ? measurementRevision : null}
+      onPreferredHeightChange={measured ? onPreferredHeightChange : undefined}
       onTransitionEndCapture={handleTransitionEndCapture}
       aria-label={label}
       data-panel-mode={mode ?? undefined}

@@ -8,6 +8,7 @@ import { useWindowDrag } from "./hooks/useWindowDrag";
 import { useLinuxPillInteractivity } from "./hooks/useLinuxPillInteractivity";
 import { useAudioRecording } from "./hooks/useAudioRecording";
 import { useAssistantPanel } from "./hooks/useAssistantPanel";
+import { useReadAloudPanel } from "./hooks/useReadAloudPanel";
 import { useOnboardingAssistantDemo } from "./hooks/useOnboardingAssistantDemo";
 import { useLiveTranscriptPanel } from "./hooks/useLiveTranscriptPanel";
 import { useMainWindowSizeOwner } from "./hooks/useMainWindowSizeOwner";
@@ -15,6 +16,7 @@ import { useMainProcessNotifications } from "./hooks/useMainProcessNotifications
 import { useListeningEntrancePhase } from "./hooks/useListeningEntrancePhase";
 import { useWindowResizeCompensation } from "./hooks/useWindowResizeCompensation";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useSpeechStore } from "./stores/speechStore";
 import { isAgentAllowed } from "./stores/policyRules";
 import { usePolicyStore } from "./stores/policyStore";
 import { useTranscriptionContextAllowed } from "./hooks/usePolicy";
@@ -22,6 +24,7 @@ import { useTrayQuickActions } from "./hooks/useTrayQuickActions";
 import { VoicePill } from "./components/dictation/VoicePill";
 import { AssistantPanel } from "./components/dictation/AssistantPanel";
 import { LiveTranscriptPanel } from "./components/dictation/LiveTranscriptPanel";
+import { ReadAloudPanel } from "./components/readAloud/ReadAloudPanel";
 import { VoiceModePanelCore } from "./components/dictation/VoiceModePanelCore";
 import { PillTooltip } from "./components/dictation/PillTooltip";
 import { PillCommandMenu } from "./components/dictation/PillCommandMenu";
@@ -191,6 +194,43 @@ export default function App() {
     openPanel: openAssistantPanel,
   } = assistant;
 
+  const readAloud = useReadAloudPanel({
+    requestMainWindowSize,
+    // The same content-driven resize the live transcript uses: a collapsed
+    // read-aloud panel is a control strip, and the standing ASSISTANT box would
+    // leave it stranded in a mostly transparent window.
+    resizeToContent: resizeLiveTranscriptToContent,
+  });
+
+  const assistantRef = useRef(assistant);
+  useLayoutEffect(() => {
+    assistantRef.current = assistant;
+  });
+
+  // The read-aloud hotkey. The panel's own toggle decides what the press means
+  // — pause, resume, or open and read the selection — and it is also what reads
+  // the selection, before the panel can take focus. See `useReadAloudPanel`.
+  //
+  // Read through refs and subscribe once: both hook objects are rebuilt on
+  // every render, so listing them as dependencies would tear the IPC listener
+  // down and put it back on each pass, and a keypress landing in that gap would
+  // be dropped.
+  const readAloudRef = useRef(readAloud);
+  useLayoutEffect(() => {
+    readAloudRef.current = readAloud;
+  });
+  useEffect(() => {
+    const dispose = window.electronAPI?.onToggleReadAloud?.(() => {
+      // One panel at a time owns the overlay. The assistant takes priority in
+      // the mode resolution (unchanged from before this feature), so yielding
+      // to it here is what makes the read-aloud panel actually appear.
+      const agent = assistantRef.current;
+      if (agent.openRef.current || agent.mounted) agent.handleClose();
+      void readAloudRef.current.toggle();
+    });
+    return () => dispose?.();
+  }, []);
+
   const handleDictationError = React.useCallback(
     (options = {}) => {
       noteDictationError(options);
@@ -334,6 +374,9 @@ export default function App() {
     liveTranscriptOpen: liveTranscript.open,
     liveTranscriptMounted: liveTranscript.mounted,
     liveTranscriptOpenRef: liveTranscript.openRef,
+    readAloudOpen: readAloud.open,
+    readAloudMounted: readAloud.mounted,
+    readAloudOpenRef: readAloud.openRef,
   });
 
   useEffect(() => {
@@ -511,8 +554,14 @@ export default function App() {
       : isProcessing && isAssistantVoice
         ? "transcribing"
         : "idle";
-  const anyPanelOpen = assistant.open || liveTranscript.open;
-  const anyPanelMounted = assistant.mounted || liveTranscript.mounted;
+  // Every panel that owns the overlay has to be listed here. This is not just a
+  // cosmetic "is something open" flag: on Linux `anyPanelMounted` reaches
+  // `useLinuxPillInteractivity` as `captureWindow`, and when that is false the
+  // native input region is shaped to the pill's rectangle on a 50 ms sampler —
+  // so every click outside the pill, the whole panel included, passes through
+  // to the window underneath and the panel cannot be clicked or focused at all.
+  const anyPanelOpen = assistant.open || liveTranscript.open || readAloud.open;
+  const anyPanelMounted = assistant.mounted || liveTranscript.mounted || readAloud.mounted;
   const canReopenLiveTranscript =
     shouldOfferLiveTranscriptReopen({
       manuallyCollapsed: liveTranscript.manuallyCollapsed,
@@ -535,6 +584,12 @@ export default function App() {
     isHovered,
   });
   const pillIsInteractive = voicePillInteraction.pillInteractive;
+  // A minimised read-aloud panel keeps reading, and the hotkey means pause and
+  // resume for as long as it does — so the pill is the only route back to the
+  // Stop button and the speed control, and it has to be live whenever something
+  // is still being spoken (or is paused mid-passage).
+  const readAloudSpeechActive = useSpeechStore((state) => state.speakingText !== null || state.paused);
+  const canReopenReadAloud = readAloudSpeechActive && !readAloud.mounted;
   // The cancel button pours out of the pill as a fused liquid skin — except
   // inside the Live Transcript panel, where the pill is already headless and
   // the classic bordered circle stays (with the same emergence motion).
@@ -550,6 +605,10 @@ export default function App() {
     : VOICE_PILL_FOOTPRINT.idle;
   const activateVoicePill = () => {
     if (!pillIsInteractive) return;
+    if (canReopenReadAloud) {
+      void readAloud.openPanel();
+      return;
+    }
     if (canReopenLiveTranscript) {
       liveTranscript.reopen();
       return;
@@ -573,6 +632,8 @@ export default function App() {
     assistantMounted: assistant.mounted,
     liveTranscriptOpen: liveTranscript.open,
     liveTranscriptMounted: liveTranscript.mounted,
+    readAloudOpen: readAloud.open,
+    readAloudMounted: readAloud.mounted,
   });
   const activeVoicePanelMode = activeVoicePanel.mode;
   const liveTranscriptEntrance = resolveLiveTranscriptEntrancePresentation(
@@ -583,7 +644,9 @@ export default function App() {
       ? t("settingsPage.agentConfig.title")
       : activeVoicePanelMode === "live-transcript"
         ? t("transcriptionPreview.label")
-        : undefined;
+        : activeVoicePanelMode === "read-aloud"
+          ? "Read aloud"
+          : undefined;
   const commonPillState =
     micState === "unavailable"
       ? "unavailable"
@@ -807,9 +870,21 @@ export default function App() {
         horizontalDirection={voiceHorizontalDirection}
         label={activeVoicePanelLabel}
         measurementRevision={
-          activeVoicePanelMode === "live-transcript" ? liveTranscript.measurementText : null
+          activeVoicePanelMode === "live-transcript"
+            ? liveTranscript.measurementText
+            : activeVoicePanelMode === "read-aloud"
+              ? readAloud.collapsed
+                ? "read-aloud-collapsed"
+                : null
+              : null
         }
-        onPreferredHeightChange={liveTranscript.requestHeight}
+        onPreferredHeightChange={
+          activeVoicePanelMode === "read-aloud"
+            ? readAloud.requestHeight
+            : liveTranscript.requestHeight
+        }
+        // Only while collapsed: expanded, the box fills the standing panel.
+        contentMeasured={activeVoicePanelMode === "read-aloud" && readAloud.collapsed}
         onClosingFadeComplete={assistant.completeContentFade}
       >
         {activeVoicePanelMode === "assistant" && assistant.mounted && (
@@ -834,7 +909,19 @@ export default function App() {
           />
         )}
 
-        {activeVoicePanelMode !== "assistant" && (
+        {activeVoicePanelMode === "read-aloud" && readAloud.mounted && (
+          <ReadAloudPanel
+            text={readAloud.text}
+            onTextChange={readAloud.setText}
+            open={readAloud.open}
+            onClose={readAloud.close}
+            onMinimize={readAloud.minimize}
+            collapsed={readAloud.collapsed}
+            onToggleCollapsed={readAloud.toggleCollapsed}
+          />
+        )}
+
+        {activeVoicePanelMode === "live-transcript" && (
           <LiveTranscriptPanel
             text={liveTranscript.mounted ? liveTranscript.text : ""}
             measurementText={liveTranscript.mounted ? liveTranscript.measurementText : ""}

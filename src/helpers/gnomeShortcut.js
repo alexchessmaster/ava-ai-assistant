@@ -24,6 +24,10 @@ const SLOT_CONFIG = {
     path: "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/openwhispr-translation/",
     name: "OpenWhispr Translation",
   },
+  readAloud: {
+    path: "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/openwhispr-read-aloud/",
+    name: "OpenWhispr Read Aloud",
+  },
 };
 
 const KEYBINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding";
@@ -138,6 +142,7 @@ class GnomeShortcutManager {
     this.meetingCallback = null;
     this.voiceAgentCallback = null;
     this.translationCallback = null;
+    this.readAloudCallback = null;
     this.globalShortcutsPortal = new GnomeGlobalShortcutsPortal();
     // Track which slots have been registered in gsettings
     this.registeredSlots = new Set();
@@ -169,6 +174,11 @@ class GnomeShortcutManager {
   setTranslationCallback(callback) {
     this.translationCallback = callback;
     debugLogger.log("[GnomeShortcut] Translation callback registered");
+  }
+
+  setReadAloudCallback(callback) {
+    this.readAloudCallback = callback;
+    debugLogger.log("[GnomeShortcut] Read aloud callback registered");
   }
 
   // Older builds persisted a gsettings keybinding for the removed chat-agent
@@ -238,6 +248,11 @@ class GnomeShortcutManager {
               this.translationCallback();
             }
           },
+          ToggleReadAloud: () => {
+            if (this.readAloudCallback) {
+              this.readAloudCallback();
+            }
+          },
         },
         DBUS_OBJECT_PATH,
         {
@@ -247,6 +262,7 @@ class GnomeShortcutManager {
             ToggleMeeting: ["", ""],
             ToggleVoiceAgent: ["", ""],
             ToggleTranslation: ["", ""],
+            ToggleReadAloud: ["", ""],
           },
         }
       );
@@ -319,6 +335,7 @@ class GnomeShortcutManager {
       meeting: "ToggleMeeting",
       voiceAgent: "ToggleVoiceAgent",
       translation: "ToggleTranslation",
+      readAloud: "ToggleReadAloud",
     };
     const dbusMethod = SLOT_DBUS_METHOD[slotName] || "Toggle";
     const command = `dbus-send --session --type=method_call --dest=${DBUS_SERVICE_NAME} ${DBUS_OBJECT_PATH} ${DBUS_INTERFACE}.${dbusMethod}`;

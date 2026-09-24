@@ -282,26 +282,31 @@ export function resolveVoicePanelCorePresentation({
   assistantMounted,
   liveTranscriptOpen,
   liveTranscriptMounted,
+  // Optional so every existing caller and test keeps the behaviour it had.
+  readAloudOpen,
+  readAloudMounted,
 }) {
   const mode = assistantOpen
     ? "assistant"
     : liveTranscriptOpen
       ? "live-transcript"
-      : assistantMounted
-        ? "assistant"
-        : liveTranscriptMounted
-          ? "live-transcript"
-          : null;
+      : readAloudOpen
+        ? "read-aloud"
+        : assistantMounted
+          ? "assistant"
+          : liveTranscriptMounted
+            ? "live-transcript"
+            : readAloudMounted
+              ? "read-aloud"
+              : null;
 
-  return {
-    mode,
-    open:
-      mode === "assistant"
-        ? Boolean(assistantOpen)
-        : mode === "live-transcript"
-          ? Boolean(liveTranscriptOpen)
-          : false,
+  const openByMode = {
+    assistant: Boolean(assistantOpen),
+    "live-transcript": Boolean(liveTranscriptOpen),
+    "read-aloud": Boolean(readAloudOpen),
   };
+
+  return { mode, open: mode ? openByMode[mode] : false };
 }
 
 /**

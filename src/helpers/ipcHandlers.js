@@ -2912,11 +2912,12 @@ class IPCHandlers {
       return { available: systemSpeech.isAvailable() };
     });
 
-    ipcMain.handle("system-speech-speak", (_event, text) => {
+    ipcMain.handle("system-speech-speak", (_event, text, options = {}) => {
       const systemSpeech = require("./systemSpeech");
       // The child exits when the utterance finishes, which is the only
       // completion signal the CLI offers.
       return systemSpeech.speak(typeof text === "string" ? text : "", {
+        rate: options?.rate,
         onEnded: () => broadcastToWindows("system-speech-ended"),
       });
     });
@@ -5803,6 +5804,21 @@ class IPCHandlers {
         return { success: false, error: "Not the dictation window" };
       }
       this.windowManager.setAssistantPanelOpen(open);
+      return { success: true };
+    });
+
+    // Same focusability handover as the assistant panel, and the same rule
+    // about who may ask for it — the read-aloud panel takes typed input too.
+    ipcMain.handle("set-read-aloud-panel-open", (event, open) => {
+      const dictationWindow = this.windowManager?.mainWindow;
+      if (
+        !dictationWindow ||
+        dictationWindow.isDestroyed() ||
+        event.sender !== dictationWindow.webContents
+      ) {
+        return { success: false, error: "Not the dictation window" };
+      }
+      this.windowManager.setReadAloudPanelOpen(open);
       return { success: true };
     });
 
@@ -11296,6 +11312,42 @@ class IPCHandlers {
 
     ipcMain.handle("get-voice-agent-key", async () => {
       return this.environmentManager.getVoiceAgentKey?.() || "";
+    });
+
+    ipcMain.handle("update-read-aloud-hotkey", async (_event, hotkey) => {
+      const hotkeyManager = this.windowManager.hotkeyManager;
+      const readAloudCallback = this.windowManager._readAloudHotkeyCallback;
+      if (!readAloudCallback) {
+        return { success: false, message: "Read aloud hotkey callback not initialized" };
+      }
+
+      if (!hotkey) {
+        const removed = await hotkeyManager.unregisterSlot("readAloud");
+        if (removed === false) return { success: false };
+        this.environmentManager.saveReadAloudKey?.("");
+        this.windowManager.reconcileNativeKeyListeners();
+        this._notifyHotkeyChanged("");
+        return { success: true, message: "Read aloud hotkey cleared" };
+      }
+
+      const result = await hotkeyManager.registerSlot("readAloud", hotkey, readAloudCallback, {
+        atomic: true,
+      });
+      this.windowManager.reconcileNativeKeyListeners();
+      if (result.success) {
+        this.environmentManager.saveReadAloudKey?.(hotkey);
+        this._notifyHotkeyChanged(hotkey);
+        return { success: true, message: `Read aloud hotkey updated to: ${hotkey}` };
+      }
+
+      return {
+        success: false,
+        message: result.error || `Failed to update read aloud hotkey to: ${hotkey}`,
+      };
+    });
+
+    ipcMain.handle("get-read-aloud-key", async () => {
+      return this.environmentManager.getReadAloudKey?.() || "";
     });
 
     ipcMain.handle("update-translation-hotkey", async (_event, hotkey) => {

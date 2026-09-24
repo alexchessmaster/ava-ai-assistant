@@ -1148,6 +1148,8 @@ export interface SettingsState
   setDictationKey: (key: string) => void;
   setMeetingKey: (key: string) => void;
   setVoiceAgentKey: (key: string) => Promise<boolean>;
+  readAloudKey: string;
+  setReadAloudKey: (key: string) => Promise<boolean>;
   translationKey: string;
   setTranslationKey: (key: string) => Promise<boolean>;
   setMeetingHotkeyLayoutMode: (mode: "side-panel" | "full-width") => void;
@@ -1270,7 +1272,7 @@ function createNumberSetter(key: string) {
 // being persisted. Rolls back to the previous key if registration fails.
 // Resolves to false on failure so optimistic UIs (HotkeyListInput) can revert.
 function createRegisteredHotkeySetter(
-  key: "voiceAgentKey" | "translationKey",
+  key: "voiceAgentKey" | "translationKey" | "readAloudKey",
   label: string,
   getRegisterFn: () =>
     ((hotkey: string) => Promise<{ success: boolean; message: string }>) | undefined,
@@ -1558,6 +1560,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   activeDictationKey: null,
   meetingKey: readString("meetingKey", ""),
   voiceAgentKey: readString("voiceAgentKey", ""),
+  readAloudKey: readString("readAloudKey", ""),
   translationKey: readString("translationKey", ""),
   onboardingUseCases: readStringArray("onboardingUseCases", []),
   onboardingUseCaseNote: readString("onboardingUseCaseNote", ""),
@@ -2277,6 +2280,11 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     "translationKey",
     "translation hotkey",
     () => window.electronAPI?.updateTranslationHotkey
+  ),
+  setReadAloudKey: createRegisteredHotkeySetter(
+    "readAloudKey",
+    "read aloud hotkey",
+    () => window.electronAPI?.updateReadAloudHotkey
   ),
 
   setMeetingHotkeyLayoutMode: (mode: "side-panel" | "full-width") => {
@@ -3390,6 +3398,20 @@ export async function initializeSettings(): Promise<void> {
     } catch (err) {
       logger.warn(
         "Failed to sync voice agent hotkey on startup",
+        { error: (err as Error).message },
+        "settings"
+      );
+    }
+
+    // Sync read aloud hotkey from main process
+    try {
+      const envKey = await window.electronAPI.getReadAloudKey?.();
+      if (envKey && envKey !== state.readAloudKey) {
+        createStringSetter("readAloudKey")(envKey);
+      }
+    } catch (err) {
+      logger.warn(
+        "Failed to sync read aloud hotkey on startup",
         { error: (err as Error).message },
         "settings"
       );

@@ -135,9 +135,9 @@ function register({ windowManager } = {}) {
    * otherwise.
    */
   ipcMain.handle("kokoro-synthesize", async (_event, payload = {}) => {
-    const { modelId, text, voiceId = 0 } = payload;
+    const { modelId, text, voiceId = 0, speed = 1 } = payload;
     try {
-      const { wavPath, bytes } = await tts.synthesize({ modelId, text, voiceId });
+      const { wavPath, bytes } = await tts.synthesize({ modelId, text, voiceId, speed });
       const audio = readAndRemove(wavPath);
       return { success: true, audio, bytes };
     } catch (error) {

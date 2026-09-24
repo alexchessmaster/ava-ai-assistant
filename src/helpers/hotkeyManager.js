@@ -17,7 +17,7 @@ const FALLBACK_HOTKEYS = ["F8", "F9", "Control+Shift+Space"];
 const DEFAULT_HOTKEY = "Control+Super";
 
 // Dictation has a dedicated native path because it also supports push-to-talk.
-const LINUX_NATIVE_TAP_SLOTS = new Set(["meeting", "voiceAgent", "translation"]);
+const LINUX_NATIVE_TAP_SLOTS = new Set(["meeting", "voiceAgent", "translation", "readAloud"]);
 
 // KDE registration failure reasons — reuse existing i18n keys
 const KDE_FAILURE_REASONS = {
@@ -240,6 +240,8 @@ class HotkeyManager extends EventEmitter {
         this.gnomeManager.setVoiceAgentCallback(callback);
       } else if (slotName === "translation") {
         this.gnomeManager.setTranslationCallback(callback);
+      } else if (slotName === "readAloud") {
+        this.gnomeManager.setReadAloudCallback(callback);
       }
 
       const success = await this.gnomeManager.registerKeybinding(gnomeHotkey, slotName);

@@ -1,12 +1,28 @@
 import { useSpeechStore } from "../stores/speechStore";
 
+export interface SpeechControlOptions {
+  /**
+   * Read the text exactly as given, without the markdown cleanup that makes a
+   * chat reply listenable. The read-aloud panel sets this: text the user pasted
+   * or selected is not a rendered reply, and the cleanup would drop fenced code
+   * blocks from it entirely.
+   */
+  verbatim?: boolean;
+}
+
 export interface SpeechControl {
   /** This particular text is the one being read. */
   speaking: boolean;
   /** False when the OS exposes no voices; the button should be disabled. */
   available: boolean;
+  /** True while a paused passage is waiting to be carried on. */
+  paused: boolean;
+  /** False when the engine in use cannot pause — `spd-say` on Linux. */
+  pausable: boolean;
   label: string;
   toggle: () => void;
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
 }
 
@@ -21,11 +37,20 @@ export interface SpeechControl {
  * other locales, so translating two new buttons would touch thirteen upstream
  * files. Add the keys here when the fork wants translations.
  */
-export function useSpeechControl(text: string): SpeechControl {
+export function useSpeechControl(
+  text: string,
+  options: SpeechControlOptions = {}
+): SpeechControl {
   const speakingText = useSpeechStore((state) => state.speakingText);
   const available = useSpeechStore((state) => state.available);
+  const paused = useSpeechStore((state) => state.paused);
+  const pausable = useSpeechStore((state) => state.pausable);
   const speak = useSpeechStore((state) => state.speak);
+  const pause = useSpeechStore((state) => state.pause);
+  const resume = useSpeechStore((state) => state.resume);
   const stop = useSpeechStore((state) => state.stop);
+
+  const verbatim = options.verbatim === true;
 
   // Comparing the text rather than an id keeps the caller from having to mint
   // one; two identical messages would both light up, which is not worth an id.
@@ -34,14 +59,19 @@ export function useSpeechControl(text: string): SpeechControl {
   return {
     speaking,
     available,
+    paused,
+    pausable,
     label: speaking ? "Stop reading" : "Read aloud",
     toggle: () => {
       if (speaking) {
         stop();
         return;
       }
-      speak(text, { codePlaceholder: "code block" });
+      if (verbatim) speak(text, { verbatim: true });
+      else speak(text, { codePlaceholder: "code block" });
     },
+    pause,
+    resume,
     stop,
   };
 }

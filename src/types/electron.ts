@@ -1726,8 +1726,8 @@ declare global {
       // Read-aloud fallback for Linux, where Chromium's speech synthesis has no
       // voices. macOS and Windows use the Web Speech API and never call these.
       systemSpeechStatus?: () => Promise<{ available: boolean }>;
-      /** Resolves true when the utterance was accepted. */
-      systemSpeechSpeak?: (text: string) => Promise<boolean>;
+      /** Resolves true when the utterance was accepted. `rate` is a multiplier. */
+      systemSpeechSpeak?: (text: string, options?: { rate?: number }) => Promise<boolean>;
       systemSpeechStop?: () => Promise<void>;
       onSystemSpeechEnded?: (callback: () => void) => () => void;
       /** Resolves a real dropped File to its path and registers it for reading. */
@@ -2719,6 +2719,10 @@ declare global {
       // Agent Mode
       updateVoiceAgentHotkey?: (hotkey: string) => Promise<{ success: boolean; message: string }>;
       getVoiceAgentKey?: () => Promise<string>;
+      updateReadAloudHotkey?: (hotkey: string) => Promise<{ success: boolean; message: string }>;
+      getReadAloudKey?: () => Promise<string>;
+      onToggleReadAloud?: (callback: () => void) => () => void;
+      setReadAloudPanelOpen?: (open: boolean) => Promise<{ success: boolean }>;
       updateTranslationHotkey?: (hotkey: string) => Promise<{ success: boolean; message: string }>;
       getTranslationKey?: () => Promise<string>;
       createAgentConversation?: (

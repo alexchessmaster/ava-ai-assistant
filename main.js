@@ -1143,6 +1143,36 @@ async function startApp() {
     }
   }
 
+  // Set up the read-aloud hotkey (reads the selection, or pasted text, aloud
+  // through the local voice). Tap-only, so it gates autorepeat like the others.
+  //
+  // The windowManager probe is what makes the selection read cheap: the
+  // renderer decides on its own whether this press means pause, resume, or
+  // "read the selection", and by the time it asks for the selection the target
+  // lookup has usually already landed.
+  const isReadAloudPress = createHotkeyRepeatGate();
+  const readAloudHotkeyCallback = () => {
+    if (!isReadAloudPress()) return;
+    windowManager.sendToggleReadAloud();
+  };
+  windowManager._readAloudHotkeyCallback = readAloudHotkeyCallback;
+
+  const savedReadAloudKey = environmentManager.getReadAloudKey?.() || "";
+  if (savedReadAloudKey) {
+    const result = await hotkeyManager.registerSlot(
+      "readAloud",
+      savedReadAloudKey,
+      readAloudHotkeyCallback
+    );
+    if (!result.success) {
+      debugLogger.warn(
+        "Failed to restore read aloud hotkey",
+        { hotkey: savedReadAloudKey },
+        "hotkey"
+      );
+    }
+  }
+
   // Set up translation hotkey (dictation cleaned up and translated into the
   // configured target language before pasting)
   const isTranslationPress = createHotkeyRepeatGate();

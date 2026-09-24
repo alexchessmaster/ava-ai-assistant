@@ -20,6 +20,7 @@
  */
 
 import { splitForSpeech } from "../utils/speechText";
+import { readSpeechSpeed } from "../utils/speechSpeed";
 
 /**
  * Storage keys are shared with the settings UI through this module so the two
@@ -69,6 +70,8 @@ export interface KokoroBridge {
     modelId: string;
     text: string;
     voiceId: number;
+    /** Applied by the engine at synthesis, so the pitch is not shifted. */
+    speed?: number;
   }) => Promise<{ success: boolean; audio?: Uint8Array; code?: string; error?: string }>;
   kokoroStop?: () => Promise<{ success: boolean }>;
   onKokoroDownloadProgress?: (callback: (progress: KokoroDownloadProgress) => void) => () => void;
@@ -188,6 +191,9 @@ function audioContext(): AudioContext | null {
 function stopPlayback() {
   const node = source;
   source = null;
+  // Nothing is playing once this returns. A pause reads `playing` before
+  // calling in here, so clearing it here cannot lose the position.
+  playing = null;
   if (node) {
     try {
       node.stop();
@@ -198,11 +204,48 @@ function stopPlayback() {
 }
 
 /**
- * Plays one decoded buffer and resolves when it finishes. Resolves rather than
- * rejects on stop, because a stop is a normal outcome here — the token check
- * after it is what ends the pipeline.
+ * What a pause has to remember in order to resume: the chunk list, which chunk
+ * it stopped in, how far into that chunk the audio reached, and the voice it was
+ * being read in.
  */
-async function playBuffer(bytes: Uint8Array, current: number): Promise<void> {
+interface ResumePoint {
+  chunks: string[];
+  index: number;
+  /** Seconds into chunks[index]. */
+  offset: number;
+  modelId: string;
+  voiceId: number;
+  options: StartOptions;
+}
+
+let resumePoint: ResumePoint | null = null;
+
+/**
+ * The chunk being played right now. Web Audio offers no way to pause a buffer
+ * source — only to stop one — so the position is reconstructed from the audio
+ * clock, and this is what a pause reads to work out where it got to.
+ */
+let playing: {
+  chunks: string[];
+  index: number;
+  modelId: string;
+  voiceId: number;
+  options: StartOptions;
+  startedAt: number;
+  startOffset: number;
+} | null = null;
+
+/**
+ * Plays one decoded buffer from `startOffset` and resolves when it finishes.
+ * Resolves rather than rejects on stop, because a stop is a normal outcome here
+ * — the token check after it is what ends the pipeline.
+ */
+async function playBuffer(
+  bytes: Uint8Array,
+  current: number,
+  descriptor: Omit<ResumePoint, "offset">,
+  startOffset: number
+): Promise<void> {
   const ctx = audioContext();
   if (!ctx) return;
 
@@ -236,11 +279,22 @@ async function playBuffer(bytes: Uint8Array, current: number): Promise<void> {
     node.buffer = decoded;
     node.connect(ctx.destination);
     node.onended = () => {
-      if (source === node) source = null;
+      // A stop nulls `source` first, so a node still in `source` here ended on
+      // its own — and nothing is playing any more, which is what keeps a pause
+      // landing between chunks from resuming at the end of the one just gone.
+      if (source === node) {
+        source = null;
+        playing = null;
+      }
       resolve();
     };
     source = node;
-    node.start();
+    // A resume re-enters part-way through the chunk it was paused in. The
+    // ceiling keeps `start` from being handed an offset at or past the end of
+    // the buffer, which throws.
+    const offset = Math.min(Math.max(0, startOffset), Math.max(0, decoded.duration - 0.02));
+    playing = { ...descriptor, startedAt: ctx.currentTime, startOffset: offset };
+    node.start(0, offset);
   });
 }
 
@@ -260,32 +314,46 @@ interface StartOptions {
 }
 
 /**
- * Starts speaking, returning false if Kokoro cannot take the job — not
- * installed, no bridge — in which case the caller runs its existing backends.
+ * The chunk loop, shared by a fresh start and a resume.
+ *
+ * `startIndex`/`startOffset` are where to begin, which is how a resume re-enters
+ * the chunk it was paused in rather than the one after it; `alreadyPlayed` says
+ * whether anything has been heard yet, because only a *fresh* failure gets to
+ * fall back to the OS voices — a resume that fails half way through should not
+ * restart the passage from the beginning in a different voice.
  */
-export function startKokoro(spokenText: string, options: StartOptions): boolean {
-  if (!ready || !spokenText) return false;
-
+function runPipeline(
+  chunks: string[],
+  startIndex: number,
+  startOffset: number,
+  modelId: string,
+  voiceId: number,
+  options: StartOptions,
+  alreadyPlayed: boolean
+): boolean {
   const api = bridge();
   if (!api?.kokoroSynthesize) return false;
 
-  const modelId = resolveModelId();
-  if (!modelId) return false;
-
-  const voiceId = resolveVoiceId();
-  const chunks = splitForSpeech(spokenText);
-  if (!chunks.length) return false;
-
   const current = ++token;
-  let playedAnything = false;
+  let heard = alreadyPlayed;
+  const descriptor = { chunks, index: startIndex, modelId, voiceId, options };
 
   void (async () => {
-    for (let index = 0; index < chunks.length; index += 1) {
+    for (let index = startIndex; index < chunks.length; index += 1) {
       if (current !== token) return;
+      descriptor.index = index;
 
       let result;
       try {
-        result = await api.kokoroSynthesize({ modelId, text: chunks[index], voiceId });
+        // Read per chunk rather than once at the start, so changing the speed
+        // while something is being read takes effect on the next chunk instead
+        // of needing a stop and a restart.
+        result = await api.kokoroSynthesize({
+          modelId,
+          text: chunks[index],
+          voiceId,
+          speed: readSpeechSpeed(),
+        });
       } catch {
         result = { success: false, code: "KOKORO_IPC_FAILED" };
       }
@@ -300,7 +368,7 @@ export function startKokoro(spokenText: string, options: StartOptions): boolean 
         // voices rather than silence. Kokoro is marked unusable first: the
         // caller retries through the normal path, and that retry must not pick
         // Kokoro again or it would loop.
-        if (!playedAnything) {
+        if (!heard) {
           ready = false;
           options.onFallback();
           return;
@@ -308,21 +376,92 @@ export function startKokoro(spokenText: string, options: StartOptions): boolean 
         break;
       }
 
-      playedAnything = true;
-      await playBuffer(result.audio, current);
+      heard = true;
+      await playBuffer(result.audio, current, descriptor, index === startIndex ? startOffset : 0);
     }
 
     if (current !== token) return;
+    resumePoint = null;
     options.onDone();
   })();
 
   return true;
 }
 
+/**
+ * Starts speaking, returning false if Kokoro cannot take the job — not
+ * installed, no bridge — in which case the caller runs its existing backends.
+ */
+export function startKokoro(spokenText: string, options: StartOptions): boolean {
+  if (!ready || !spokenText) return false;
+
+  const modelId = resolveModelId();
+  if (!modelId) return false;
+
+  const chunks = splitForSpeech(spokenText);
+  if (!chunks.length) return false;
+
+  resumePoint = null;
+  return runPipeline(chunks, 0, 0, modelId, resolveVoiceId(), options, false);
+}
+
+/**
+ * Stops the audio where it is and remembers the position, so `resumeKokoro` can
+ * pick the passage up mid-chunk. Returns false when there was nothing playing,
+ * which is how the caller knows to offer no pause at all.
+ */
+export function pauseKokoro(): boolean {
+  const current = playing;
+  if (!current) return false;
+
+  const ctx = context;
+  const elapsed =
+    current.startOffset + (ctx ? Math.max(0, ctx.currentTime - current.startedAt) : 0);
+
+  resumePoint = {
+    chunks: current.chunks,
+    index: current.index,
+    offset: elapsed,
+    modelId: current.modelId,
+    voiceId: current.voiceId,
+    options: current.options,
+  };
+
+  // The same invalidation a stop performs: synthesis already queued for the
+  // chunks after this one would otherwise keep a core busy through the pause,
+  // and its result would arrive with nothing to play it into.
+  token += 1;
+  stopPlayback();
+  void bridge()?.kokoroStop?.();
+  return true;
+}
+
+export function resumeKokoro(): boolean {
+  const point = resumePoint;
+  if (!point || !ready) return false;
+  resumePoint = null;
+  return runPipeline(
+    point.chunks,
+    point.index,
+    point.offset,
+    point.modelId,
+    point.voiceId,
+    point.options,
+    true
+  );
+}
+
+/** Whether there is a paused passage waiting to be picked back up. */
+export function isKokoroPaused(): boolean {
+  return resumePoint !== null;
+}
+
 export function stopKokoro() {
   // Invalidates the pipeline before anything else, so a synthesis result that
   // arrives after this point is discarded rather than played.
   token += 1;
+  // A stop is final: unlike a pause it leaves nothing to resume into.
+  resumePoint = null;
   stopPlayback();
   void bridge()?.kokoroStop?.();
 }

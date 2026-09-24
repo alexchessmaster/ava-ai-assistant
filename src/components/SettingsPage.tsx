@@ -1295,6 +1295,8 @@ export default function SettingsPage({
   const setVoiceAgentKey = useSettingsStore((s) => s.setVoiceAgentKey);
   const translationKey = useSettingsStore((s) => s.translationKey);
   const setTranslationKey = useSettingsStore((s) => s.setTranslationKey);
+  const readAloudKey = useSettingsStore((s) => s.readAloudKey);
+  const setReadAloudKey = useSettingsStore((s) => s.setReadAloudKey);
 
   const settingsPolicyState = usePolicySnapshot();
   const agentAllowedByPolicy = isAgentAllowed(settingsPolicyState);
@@ -1520,6 +1522,11 @@ export default function SettingsPage({
     [showAlertDialog, t]
   );
 
+  // The read-aloud slot has no i18n block of its own (see the row below), so its
+  // label is passed through untranslated. `t()` returns an unknown key as-is,
+  // which is what makes the plain string work in the conflict message.
+  const READ_ALOUD_LABEL = "Read aloud hotkey";
+
   const validateDictationHotkey = useCallback(
     (hotkey: string) =>
       validateHotkeyForSlot(
@@ -1528,10 +1535,11 @@ export default function SettingsPage({
           "settingsPage.general.meetingHotkey.title": meetingKey,
           "settingsPage.general.voiceAgentHotkey.title": voiceAgentKey,
           "settingsPage.general.translationHotkey.title": translationKey,
+          [READ_ALOUD_LABEL]: readAloudKey,
         },
         t
       ),
-    [meetingKey, voiceAgentKey, translationKey, t]
+    [meetingKey, voiceAgentKey, translationKey, readAloudKey, t]
   );
 
   const validateMeetingHotkey = useCallback(
@@ -1542,10 +1550,11 @@ export default function SettingsPage({
           "settingsPage.general.hotkey.title": dictationKey,
           "settingsPage.general.voiceAgentHotkey.title": voiceAgentKey,
           "settingsPage.general.translationHotkey.title": translationKey,
+          [READ_ALOUD_LABEL]: readAloudKey,
         },
         t
       ),
-    [dictationKey, voiceAgentKey, translationKey, t]
+    [dictationKey, voiceAgentKey, translationKey, readAloudKey, t]
   );
 
   const validateVoiceAgentHotkey = useCallback(
@@ -1556,10 +1565,11 @@ export default function SettingsPage({
           "settingsPage.general.hotkey.title": dictationKey,
           "settingsPage.general.meetingHotkey.title": meetingKey,
           "settingsPage.general.translationHotkey.title": translationKey,
+          [READ_ALOUD_LABEL]: readAloudKey,
         },
         t
       ),
-    [dictationKey, meetingKey, translationKey, t]
+    [dictationKey, meetingKey, translationKey, readAloudKey, t]
   );
 
   const validateTranslationHotkey = useCallback(
@@ -1570,10 +1580,26 @@ export default function SettingsPage({
           "settingsPage.general.hotkey.title": dictationKey,
           "settingsPage.general.meetingHotkey.title": meetingKey,
           "settingsPage.general.voiceAgentHotkey.title": voiceAgentKey,
+          [READ_ALOUD_LABEL]: readAloudKey,
         },
         t
       ),
-    [dictationKey, meetingKey, voiceAgentKey, t]
+    [dictationKey, meetingKey, voiceAgentKey, readAloudKey, t]
+  );
+
+  const validateReadAloudHotkey = useCallback(
+    (hotkey: string) =>
+      validateHotkeyForSlot(
+        hotkey,
+        {
+          "settingsPage.general.hotkey.title": dictationKey,
+          "settingsPage.general.meetingHotkey.title": meetingKey,
+          "settingsPage.general.voiceAgentHotkey.title": voiceAgentKey,
+          "settingsPage.general.translationHotkey.title": translationKey,
+        },
+        t
+      ),
+    [dictationKey, meetingKey, voiceAgentKey, translationKey, t]
   );
 
   const {
@@ -4078,6 +4104,30 @@ EOF`,
                     onChange={(list) => commitAgentHotkey(setTranslationKey, list)}
                     onClear={() => commitAgentHotkey(setTranslationKey, "")}
                     validate={validateTranslationHotkey}
+                    disabled={isAgentHotkeyCommitting}
+                    maxHotkeys={isUsingNativeShortcut ? 1 : undefined}
+                  />
+                </SettingsPanelRow>
+              </SettingsPanel>
+            </div>
+
+            {/* Read Aloud Hotkey */}
+            <div>
+              {/* Plain English, unlike its siblings: the fork's own surfaces
+                  avoid `t()` so a new string does not mean adding a key to
+                  every upstream locale file on each merge. See the note in
+                  KokoroSettings.tsx. */}
+              <SectionHeader
+                title="Read aloud hotkey"
+                description="Press it to read your highlighted text aloud in the local voice, or to open a panel you can paste text into. Press it again to pause and resume."
+              />
+              <SettingsPanel>
+                <SettingsPanelRow>
+                  <HotkeyListInput
+                    value={readAloudKey}
+                    onChange={(list) => commitAgentHotkey(setReadAloudKey, list)}
+                    onClear={() => commitAgentHotkey(setReadAloudKey, "")}
+                    validate={validateReadAloudHotkey}
                     disabled={isAgentHotkeyCommitting}
                     maxHotkeys={isUsingNativeShortcut ? 1 : undefined}
                   />

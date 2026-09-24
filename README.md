@@ -642,6 +642,51 @@ means an Apple Developer account ($99/year) and setting `CSC_LINK` /
 environment and signs automatically. Windows builds similarly want a code-signing
 certificate, or they trip SmartScreen on every download.
 
+### Per-platform prerequisites
+
+The paste/target helpers are the one part of the build that differs by platform. All three
+degrade to *silently doing less* rather than failing loudly, so it is worth knowing which
+one you are on.
+
+**Linux**
+
+```bash
+sudo apt install xdotool libatspi2.0-dev   # runtime target detection, and AT-SPI in the helper
+npm run compile:linux-paste                # rebuild resources/bin/linux-fast-paste
+```
+
+`xdotool` is the runtime dependency described under [Voice Assistant
+hotkey](#features-inherited-from-openwhispr) — without it an X11 session has no way to name
+the window you selected in. `libatspi2.0-dev` is a *build* dependency: `pkg-config --exists
+atspi-2` decides whether `linux-fast-paste` is compiled with `-DHAVE_ATSPI`, and when the
+package is absent the helper still builds and still reports success — it simply answers
+every AT-SPI query with exit code 5 and no output. Check what you got:
+
+```bash
+resources/bin/linux-fast-paste --capabilities
+# paste-v1 selection-copy-v1 target-window-v1 portal-keysym-v1 atspi-selection-v1
+```
+
+If `atspi-selection-v1` is missing from that line, the helper has no AT-SPI support and
+selection reading on Wayland (and the AT-SPI fallback everywhere else) cannot work. CI
+builds install the package, so this is a local-checkout problem, not a release one.
+
+**macOS** — nothing to install beyond the **Xcode command line tools**. `macos-fast-paste`
+is compiled from Swift at build time (`scripts/build-macos-fast-paste.js` invokes
+`xcrun swiftc`), as are the Globe, microphone and calendar listeners. `npm run compile:native`
+covers all of them. There is no package-manager equivalent of the Linux step above because
+there is nothing to fetch: the helper is built from the source in this repo.
+
+**Windows** — nothing to install, and no compiler. `windows-fast-paste.exe` is a prebuilt
+binary fetched by `npm run download:windows-fast-paste`, which is part of `prebuild:win`;
+`build-windows-fast-paste.js` falls back to that download when a local build isn't possible.
+If neither succeeds the build says so rather than failing:
+
+> Windows paste will use nircmd/PowerShell fallback; selection editing will type at the cursor.
+
+That is the same class of silent degradation as the Linux one — paste keeps working, and
+only the selected-text features quietly lose their target.
+
 See the [upstream docs](https://docs.openwhispr.com/quickstart) for the platform setup,
 signing, and notarization details.
 
@@ -656,6 +701,23 @@ Everything below is upstream's work, documented here because it is most of the a
 - **Dictation translation** — dedicated hotkey to dictate in one language and paste the text in another
 - **AI agent** — talk to GPT-5, Claude, Gemini, Groq, Tinfoil, OpenRouter, or local models with a named voice assistant
 - **Voice Assistant hotkey** — dedicated hotkey that sends what you say straight to your AI assistant as a command, no wake word needed and no cleanup pass; highlighted text is edited in place. With auto-paste enabled, answers paste at a focused text cursor or stream into a floating panel and copy to the clipboard when no writable cursor is available. You can also opt in to sending a screenshot of your current screen as context
+  - **On Linux this needs one extra package.** Run `sudo apt install xdotool` and highlighted
+    text can be read and edited in place: `xdotool` is how the app names the window you
+    selected in. On an X11 session, without it there is no way to identify the target window
+    at all, so the feature quietly does nothing — the hotkey still works, but the command
+    arrives with no selection attached and the assistant answers as if you had said it about
+    nothing. On Wayland the same read goes through AT-SPI instead and needs no extra package,
+    but only if the paste helper was built with AT-SPI support; see [Building](#building).
+  - **On macOS it needs a permission instead, not a package.** Nothing to install, but the app
+    must be allowed under **System Settings → Privacy & Security → Accessibility**. Without it
+    both routes to your selection fail — the accessibility read has nothing to read, and the
+    synthetic-copy fallback is refused because the helper is not a trusted client. The result is
+    the same silent nothing described above. This is the same permission automatic pasting
+    already asks for, so if pasting works, this does too.
+  - **On Windows there is nothing to do.** The helper is a prebuilt binary fetched during the
+    build, and if it is missing the build warns rather than failing — paste keeps working and
+    only the selected-text features quietly lose their target. See [Building](#building) for the
+    line to look for in the build log.
 - **Meeting transcription** — auto-detect Zoom, Teams, and FaceTime calls with live speaker diarization, voice fingerprinting, and Google, Microsoft, or Apple Calendar integration
 - **Local speaker diarization** — on-device speaker labelling with voice fingerprint recognition across meetings, no cloud required
 - **Notes** — create, organize, and search notes with folders, semantic search, cloud sync, and AI actions

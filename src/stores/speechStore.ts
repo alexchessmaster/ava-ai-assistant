@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { splitForSpeech, toSpeechText } from "../utils/speechText";
-import { initKokoro, startKokoro, stopKokoro } from "./kokoroSpeech";
+import { readSpeechSpeed } from "../utils/speechSpeed";
+import {
+  initKokoro,
+  pauseKokoro,
+  resumeKokoro,
+  startKokoro,
+  stopKokoro,
+} from "./kokoroSpeech";
 
 /**
  * The one thing that speaks.
@@ -29,9 +36,26 @@ interface SpeechState {
   speakingText: string | null;
   /** False when the platform offers no way to speak at all. */
   available: boolean;
-  speak: (text: string, options?: { codePlaceholder?: string }) => void;
+  /** True while a paused passage is waiting to be resumed. */
+  paused: boolean;
+  /**
+   * False when the engine currently speaking cannot pause. Only `spd-say` on
+   * Linux is in that position, and the control should say "Stop" there rather
+   * than offer a pause that silently does nothing.
+   */
+  pausable: boolean;
+  speak: (text: string, options?: { codePlaceholder?: string; verbatim?: boolean }) => void;
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
 }
+
+/**
+ * Which engine took the job, so pause and resume can be routed back to the one
+ * that is actually speaking. Null when nothing is.
+ */
+type SpeechBackend = "kokoro" | "web" | "system" | null;
+let activeBackend: SpeechBackend = null;
 
 function synth(): SpeechSynthesis | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
@@ -47,9 +71,17 @@ const bridge = () => (typeof window === "undefined" ? undefined : window.electro
 export const useSpeechStore = create<SpeechState>()((set, get) => ({
   speakingText: null,
   available: false,
+  paused: false,
+  pausable: false,
 
   speak: (text, options) => {
-    const spoken = toSpeechText(text, { codePlaceholder: options?.codePlaceholder });
+    // `verbatim` is for text the user chose to read — pasted or selected
+    // prose is not a markdown reply, so the cleanup that makes a reply
+    // listenable (and that drops fenced code blocks entirely) would silently
+    // change it. Chunking below still applies either way.
+    const spoken = options?.verbatim
+      ? text
+      : toSpeechText(text, { codePlaceholder: options?.codePlaceholder });
     if (!spoken) return;
     // Only one reply is ever read; starting another cancels the one playing.
     get().stop();
@@ -63,26 +95,32 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     if (
       startKokoro(spoken, {
         onDone: () => {
-          if (get().speakingText === text) set({ speakingText: null });
+          activeBackend = null;
+          if (get().speakingText === text) set({ speakingText: null, paused: false });
         },
         onFallback: () => {
-          if (get().speakingText === text) set({ speakingText: null });
+          activeBackend = null;
+          if (get().speakingText === text) set({ speakingText: null, paused: false });
           get().speak(text, options);
         },
       })
     ) {
-      set({ speakingText: text });
+      activeBackend = "kokoro";
+      set({ speakingText: text, paused: false, pausable: true });
       return;
     }
 
     if (hasWebVoices()) {
       const engine = synth();
       if (!engine) return;
-      set({ speakingText: text });
+      // Pausing mid-utterance is native here; `resume()` picks it back up.
+      activeBackend = "web";
+      set({ speakingText: text, paused: false, pausable: true });
 
       const chunks = splitForSpeech(spoken);
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk);
+        utterance.rate = readSpeechSpeed();
         if (index === chunks.length - 1) {
           // Cancelling fires neither handler, so stop() clears the state itself.
           const finish = () => {
@@ -99,8 +137,13 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
     const speakSystem = bridge()?.systemSpeechSpeak;
     if (!speakSystem) return;
 
-    set({ speakingText: text });
-    void speakSystem(spoken)
+    // `pausable: false` is honest signalling rather than a limitation being
+    // hidden: speech-dispatcher's CLI has no pause (only `-S` stop and `-C`
+    // cancel), so the control offers Stop instead of a pause that would do
+    // nothing.
+    activeBackend = "system";
+    set({ speakingText: text, paused: false, pausable: false });
+    void speakSystem(spoken, { rate: readSpeechSpeed() })
       .then((accepted) => {
         if (!accepted && get().speakingText === text) set({ speakingText: null });
       })
@@ -109,11 +152,48 @@ export const useSpeechStore = create<SpeechState>()((set, get) => ({
       });
   },
 
+  /**
+   * Holds the audio where it is, keeping the position so `resume()` can carry
+   * on mid-sentence rather than from the start of the chunk.
+   */
+  pause: () => {
+    if (get().paused || !get().speakingText) return;
+
+    if (activeBackend === "kokoro") {
+      // False means nothing was actually playing — between chunks, say — so
+      // there is no position to hold and the state must not claim otherwise.
+      if (pauseKokoro()) set({ paused: true });
+      return;
+    }
+    if (activeBackend === "web") {
+      synth()?.pause();
+      set({ paused: true });
+    }
+    // The system backend has nothing to pause with, and `pausable` is false
+    // there, so the UI never offers this.
+  },
+
+  resume: () => {
+    if (!get().paused) return;
+
+    if (activeBackend === "kokoro") {
+      // A resume that cannot start leaves the passage paused rather than
+      // silently clearing the state.
+      if (resumeKokoro()) set({ paused: false });
+      return;
+    }
+    if (activeBackend === "web") {
+      synth()?.resume();
+      set({ paused: false });
+    }
+  },
+
   stop: () => {
     synth()?.cancel();
     void bridge()?.systemSpeechStop?.();
     stopKokoro();
-    set({ speakingText: null });
+    activeBackend = null;
+    set({ speakingText: null, paused: false });
   },
 }));
 
@@ -151,7 +231,9 @@ if (typeof window !== "undefined") {
 
   // The system engine's child exits when the utterance finishes; that is the
   // only completion signal the CLI offers.
-  bridgeApi?.onSystemSpeechEnded?.(() => useSpeechStore.setState({ speakingText: null }));
+  bridgeApi?.onSystemSpeechEnded?.(() =>
+    useSpeechStore.setState({ speakingText: null, paused: false })
+  );
 
   window.addEventListener("beforeunload", () => {
     synth()?.cancel();

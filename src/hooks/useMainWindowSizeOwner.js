@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useSpeechStore } from "../stores/speechStore";
 import { createPillVisibilityHandoff } from "../utils/pillVisibilityHandoff";
 import { SIZE_RANK, resolveMainWindowSizeKey } from "../utils/windowSizeLadder";
 
@@ -30,6 +31,9 @@ export function useMainWindowSizeOwner({
   liveTranscriptOpen,
   liveTranscriptMounted,
   liveTranscriptOpenRef,
+  readAloudOpen = false,
+  readAloudMounted = false,
+  readAloudOpenRef,
 }) {
   const [handoffActive, setHandoffActive] = useState(false);
   const actionCountRef = useRef(dictationErrorActionCount);
@@ -48,8 +52,16 @@ export function useMainWindowSizeOwner({
       // Retry (and the hotkey) clear the error card by starting the next
       // dictation. Handing the window back to auto-hide then would leave that
       // recording running with no pill on screen (#2141).
+      //
+      // A minimised read-aloud panel counts the same way: it is deliberately
+      // invisible work, and auto-hiding the window would take the pill with it
+      // — leaving audio playing with no control surface at all, since the
+      // hotkey only pauses and resumes while something is being read.
       shouldAutoHide: () =>
-        useSettingsStore.getState().floatingIconAutoHide && !dictationActiveRef.current,
+        useSettingsStore.getState().floatingIconAutoHide &&
+        !dictationActiveRef.current &&
+        !useSpeechStore.getState().speakingText &&
+        !useSpeechStore.getState().paused,
       hideWindow: () => window.electronAPI?.hideWindow?.(),
     });
     handoffRef.current = handoff;
@@ -88,8 +100,10 @@ export function useMainWindowSizeOwner({
     const panelOwnsWindow =
       assistantOpenRef.current ||
       liveTranscriptOpenRef.current ||
+      readAloudOpenRef?.current ||
       assistantMounted ||
-      liveTranscriptMounted;
+      liveTranscriptMounted ||
+      readAloudMounted;
     if (panelOwnsWindow) {
       panelSizeReservationRef.current = true;
       if (panelReturnSuppressedRef.current) {
@@ -180,6 +194,9 @@ export function useMainWindowSizeOwner({
     liveTranscriptOpen,
     liveTranscriptMounted,
     liveTranscriptOpenRef,
+    readAloudOpen,
+    readAloudMounted,
+    readAloudOpenRef,
     isCommandMenuOpen,
     toastCount,
     isCompactPill,
